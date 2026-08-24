@@ -1,0 +1,14 @@
+seed: 42
+data:
+  real_sem_root: data/raw/train/SEM
+  val_fraction: 0.1
+model:
+  encoder: efficientnet_b0
+  pretrained: true
+train:
+  epochs: 3
+  batch_size: 512
+  lr: 3.0e-4
+  num_workers: 8
+out:
+  ckpt: experiments/runs/clf_bucket/best.pt
