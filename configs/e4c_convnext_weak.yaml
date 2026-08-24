@@ -1,0 +1,26 @@
+seed: 43
+init_ckpt: experiments/runs/e4b_convnext_itrmean_base/best.pt
+data:
+  sim_sem_dir: data/raw/simulation_data/SEM
+  sim_depth_dir: data/raw/simulation_data/Depth
+  real_sem_root: data/raw/train/SEM
+  real_csv: data/raw/train/average_depth.csv
+  val_fraction: 0.1
+model:
+  encoder: convnext_tiny
+train:
+  epochs: 8
+  batch_size: 256
+  real_batch: 256
+  lr: 1.0e-4
+  weight_decay: 1.0e-4
+  num_workers: 8
+  amp: true
+  augment: true
+  input_mode: itr_mean
+  lambda_real: 1.0
+  refit_sample: 8192
+out:
+  run_name: e4c_convnext_weak
+  runs_dir: experiments/runs
+  results_csv: experiments/results.csv
