@@ -1,0 +1,2 @@
+date,run_name,zip,sim_val_rmse255,raw_proxy_rmse,cal_proxy_rmse,proxy_corr,lb_public_rmse,note
+2026-08-24,s1_baseline_r34,submission_s1_baseline.zip,2.0846,11.9482,5.3657,0.8752,,pending user upload — first LB calibration point

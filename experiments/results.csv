@@ -1,2 +1,4 @@
-run_name,encoder,epochs,batch_size,lr,augment,seed,n_train_imgs,n_val_imgs,best_val_rmse255,wall_min
-s1_pilot,resnet34,1,256,0.0003,True,42,155976,17328,3.3877,0.8
+run_name,encoder,epochs,batch_size,lr,augment,seed,n_train_imgs,n_val_imgs,best_val_rmse255,wall_min,raw_proxy_rmse,cal_proxy_rmse,proxy_corr,cal_a,cal_b
+s1_pilot,resnet34,1.0,256.0,0.0003,True,42.0,155976.0,17328.0,3.3877,0.8,,,,,
+s1_baseline_r34,resnet34,40.0,256.0,0.0003,True,42.0,155976.0,17328.0,2.0846,27.0,,,,,
+s1_baseline_r34_proxy,,,,,,,,,,,11.9482,5.3657,0.8752,-64.256,1.6541
