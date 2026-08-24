@@ -515,6 +515,30 @@ def test_pairing_rejects_orphan_sem(synth_root):
         _pairs(synth_root)
 
 
+def test_pairing_rejects_bad_sem_name(synth_root):
+    bad = synth_root / "simulation_data" / "SEM" / "Case_1" / "80" / "noitr.png"
+    bad.write_bytes((synth_root / "test" / "SEM" / "000000.png").read_bytes())
+    with pytest.raises(ValueError, match="no _itr suffix"):
+        _pairs(synth_root)
+
+
+def test_pairing_rejects_misplaced_depth(synth_root):
+    depth_dir = synth_root / "simulation_data" / "Depth" / "Case_1" / "80"
+    victim = sorted(depth_dir.glob("*.png"))[0]
+    victim.rename(depth_dir / "renamed.png")  # count unchanged, per-item lookup fails
+    with pytest.raises(ValueError, match="depth map missing"):
+        _pairs(synth_root)
+
+
+def test_augment_flips_image_and_target_together(synth_root, monkeypatch):
+    aug_ds = SimDataset(_pairs(synth_root), augment=True)
+    base_ds = SimDataset(_pairs(synth_root), augment=False)
+    monkeypatch.setattr("semdepth.data.random.random", lambda: 0.0)  # force both flips
+    aug, orig = aug_ds[0], base_ds[0]
+    assert torch.equal(aug["image"], torch.flip(orig["image"], [1, 2]))
+    assert torch.equal(aug["target"], torch.flip(orig["target"], [1, 2]))
+
+
 def test_group_split_no_leak(synth_root):
     pairs = _pairs(synth_root)
     tr, va = split_pairs(pairs, val_fraction=0.34, seed=7)
@@ -1344,7 +1368,7 @@ if __name__ == "__main__":
 Run: `uv run python scripts/inspect_data.py | tee /tmp/inspect_out.txt`
 확인 항목(각각 결과를 `docs/data-notes.md`에 기록):
 1. 시뮬레이션 SEM 259,956장 / Depth 129,978장(=SEM의 절반), 실제 train 60,664장, test 25,988장 — 수량 일치?
-2. SEM↔Depth 파일명 매칭 규칙이 `<case>_itr<k>` ↔ `<case>` 인지 (`list_sim_pairs`를 실데이터에 실행해 예외 없이 페어링되는지 파이썬 원라이너로 확인)
+2. SEM↔Depth 매칭이 예외 없이 되는지 (`list_sim_pairs`를 실데이터에 실행) + **케이스 내 고유 stem 수 == 해당 케이스 depth 수(21,663)** 로 버킷 간 group_id 충돌이 없음을 확인 (group_id가 bucket을 버리므로, 충돌 시 서로 다른 구조가 한 그룹으로 묶임)
 3. 이미지 크기·비트심도, `average_depth.csv`의 실제 컬럼명
 4. 제출 형식: sample_submission 존재 여부, zip 내부 구조(평면/폴더)
 5. depth 값 스케일(0–255인지), 값이 작을수록 깊다는 방향성
