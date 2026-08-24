@@ -1,5 +1,5 @@
 seed: 42
-init_ckpt: experiments/runs/e1_appearance_r34/best.pt
+init_ckpt: experiments/runs/s1_baseline_r34/best.pt
 data:
   sim_sem_dir: data/raw/simulation_data/SEM
   sim_depth_dir: data/raw/simulation_data/Depth
@@ -17,11 +17,6 @@ train:
   num_workers: 8
   amp: true
   augment: true
-  appearance:
-    brightness: [-0.05, 0.22]
-    contrast: [0.85, 1.30]
-    blur_sigma: [0.0, 1.5]
-    noise_std: [0.0, 0.04]
   lambda_real: 1.0
   refit_sample: 8192
 out:
