@@ -8,3 +8,4 @@ experiments/runs/
 nohup.out
 .pytest_cache/
 *.egg-info/
+docs/application-notes.md
