@@ -6,14 +6,18 @@ from semdepth.data import RealDataset
 
 @torch.no_grad()
 def real_proxy_rmse(
-    model: torch.nn.Module, dataset: RealDataset, device: str, batch_size: int = 256
+    model: torch.nn.Module,
+    dataset: RealDataset,
+    device: str,
+    batch_size: int = 256,
+    num_workers: int = 0,
 ) -> float:
     """RMSE between predicted-map means (0-255) and given average depths.
 
     Submission-free proxy that quantifies the sim-to-real domain gap.
     """
     model = model.to(device).eval()
-    dl = DataLoader(dataset, batch_size=batch_size, num_workers=4)
+    dl = DataLoader(dataset, batch_size=batch_size, num_workers=num_workers)
     se_sum, n = 0.0, 0
     for batch in dl:
         x = batch["image"].to(device)

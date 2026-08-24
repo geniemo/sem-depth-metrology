@@ -1,10 +1,16 @@
 import zipfile
 
 import numpy as np
+import torch
 from PIL import Image
 
 from semdepth.infer import make_submission_zip, predict_dir
 from semdepth.model import UnetTimm
+
+
+class _IdentityModel(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x
 
 
 def test_predict_dir_and_zip(synth_root, tmp_path):
@@ -20,3 +26,17 @@ def test_predict_dir_and_zip(synth_root, tmp_path):
     with zipfile.ZipFile(tmp_path / "submission.zip") as zf:
         assert sorted(zf.namelist()) == in_names
     assert n_zip == 4
+
+
+def test_predict_tta_unflips_before_averaging(synth_root, tmp_path):
+    n = predict_dir(
+        _IdentityModel(), synth_root / "test" / "SEM", tmp_path / "pred_tta",
+        device="cpu", flip_tta=True,
+    )
+    assert n == 4
+    for p in sorted((synth_root / "test" / "SEM").glob("*.png")):
+        out = np.array(Image.open(tmp_path / "pred_tta" / p.name))
+        src = np.array(Image.open(p))
+        # identity model + correct flip->unflip == exact uint8 roundtrip;
+        # a missing/misaxised unflip would average a mirrored copy in and break this
+        assert np.array_equal(out, src)

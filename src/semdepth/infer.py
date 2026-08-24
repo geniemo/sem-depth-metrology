@@ -18,12 +18,13 @@ def predict_dir(
     device: str,
     batch_size: int = 256,
     flip_tta: bool = False,
+    num_workers: int = 0,
 ) -> int:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     model = model.to(device).eval()
     ds = ImageDirDataset(Path(sem_dir))
-    dl = DataLoader(ds, batch_size=batch_size, num_workers=4)
+    dl = DataLoader(ds, batch_size=batch_size, num_workers=num_workers)
     n = 0
     for batch in tqdm(dl, desc="predict"):
         x = batch["image"].to(device)
