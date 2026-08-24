@@ -32,11 +32,11 @@ def test_retrieve_recovers_planted_key_under_shift_and_jitter():
     target = 7
     q = np.roll(keys_raw[target], shift=(1, -2), axis=(0, 1))  # shifted acquisition
     q = 0.8 * q + 0.1 + rng.normal(0, 0.01, q.shape).astype(np.float32)  # jitter+noise
-    idx, sims = retrieve_batch(standardize(q)[None], keys, device="cpu", shift=2, topk=3)
+    idx, sims, var = retrieve_batch(standardize(q)[None], keys, device="cpu", shift=2, topk=3)
     assert idx[0, 0] == target
     assert sims[0, 0] > 0.95
     # without shift search the same query must NOT match as well
-    _, sims_ns = retrieve_batch(standardize(q)[None], keys, device="cpu", shift=0, topk=1)
+    _, sims_ns, _ = retrieve_batch(standardize(q)[None], keys, device="cpu", shift=0, topk=1)
     assert sims_ns[0, 0] < sims[0, 0]
 
 
@@ -47,8 +47,8 @@ def test_retrieve_flip_variant_recovers_flipped_query():
         torch.from_numpy(np.stack([standardize(k).ravel() for k in keys_raw])), dim=1
     ).half()
     q = standardize(keys_raw[4][:, ::-1].copy())  # horizontally mirrored acquisition
-    idx_no, sims_no = retrieve_batch(q[None], keys, device="cpu", shift=0, flips=False, topk=1)
-    idx_fl, sims_fl = retrieve_batch(q[None], keys, device="cpu", shift=0, flips=True, topk=1)
+    idx_no, sims_no, _ = retrieve_batch(q[None], keys, device="cpu", shift=0, flips=False, topk=1)
+    idx_fl, sims_fl, _ = retrieve_batch(q[None], keys, device="cpu", shift=0, flips=True, topk=1)
     assert sims_fl[0, 0] > 0.99 and idx_fl[0, 0] == 4
     assert sims_fl[0, 0] > sims_no[0, 0]
 
@@ -81,3 +81,39 @@ def test_hole_mean_depth_semantics():
 def test_bucket_case_mapping_constants():
     assert BUCKET_TO_CASE == {"110": "Case_1", "120": "Case_2", "130": "Case_3", "140": "Case_4"}
     assert [CASE_BG[BUCKET_TO_CASE[b]] - 30 for b in ("110", "120", "130", "140")] == [110, 120, 130, 140]
+
+
+def test_variant_realignment_roundtrip():
+    from semdepth.retrieval import align_key_to_query, variant_specs
+
+    rng = np.random.default_rng(3)
+    key = _rand_img(rng)
+    keys = torch.nn.functional.normalize(
+        torch.from_numpy(standardize(key).ravel()[None]), dim=1
+    ).half()
+    # acquisition = key shifted by (2, -1): the search must find the variant
+    # whose inverse maps the key back onto the query frame
+    q = np.roll(key, shift=(2, -1), axis=(0, 1))
+    idx, sims, var = retrieve_batch(standardize(q)[None], keys, device="cpu", shift=2, topk=1)
+    spec = variant_specs(2, False)[int(var[0, 0])]
+    realigned = align_key_to_query(key, spec)
+    assert np.allclose(realigned, q, atol=1e-6)
+    assert sims[0, 0] > 0.999
+
+
+def test_blend_depths_aligned_single(synth_root):
+    from semdepth.data import list_sim_pairs
+    from semdepth.retrieval import blend_depths_aligned, variant_specs
+
+    pairs = list_sim_pairs(
+        synth_root / "simulation_data" / "SEM", synth_root / "simulation_data" / "Depth"
+    )
+    _, depths = build_keys(pairs, blur_sigma=0.0, device="cpu")
+    specs = variant_specs(2, False)
+    spec_idx = specs.index((0, 1, -2))
+    pred = blend_depths_aligned(depths, np.array([0]), np.array([1.0]),
+                                np.array([spec_idx]), specs)
+    from PIL import Image
+
+    raw = np.asarray(Image.open(depths[0]).convert("L"), dtype=np.float32)
+    assert np.array_equal(pred, np.roll(raw, shift=(-1, 2), axis=(0, 1)).round().astype(np.uint8))

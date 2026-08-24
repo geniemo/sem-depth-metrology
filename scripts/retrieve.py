@@ -15,7 +15,8 @@ from PIL import Image
 from semdepth.classify import BucketClassifier, predict_buckets
 from semdepth.data import list_sim_pairs, load_image01
 from semdepth.infer import make_submission_zip
-from semdepth.retrieval import blend_depths, build_keys, retrieve_batch, standardize
+from semdepth.retrieval import (blend_depths_aligned, build_keys, retrieve_batch,
+                                standardize, variant_specs)
 
 _CASES = ("Case_1", "Case_2", "Case_3", "Case_4")
 
@@ -60,10 +61,11 @@ def main() -> None:
         for s in range(0, len(cpaths), args.chunk):
             chunk = cpaths[s:s + args.chunk]
             q = np.stack([standardize(load_image01(p)) for p in chunk])
-            idx, sims = retrieve_batch(q, keys, device, shift=args.shift,
-                                       flips=args.flips, topk=args.topk)
+            idx, sims, var = retrieve_batch(q, keys, device, shift=args.shift,
+                                            flips=args.flips, topk=args.topk)
+            specs = variant_specs(args.shift, args.flips)
             for j, p in enumerate(chunk):
-                pred = blend_depths(depths, idx[j], sims[j])
+                pred = blend_depths_aligned(depths, idx[j], sims[j], var[j], specs)
                 Image.fromarray(pred, mode="L").save(out_dir / p.name)
                 n_written += 1
             sims_all.extend(sims[:, 0].tolist())

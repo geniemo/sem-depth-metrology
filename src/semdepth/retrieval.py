@@ -62,17 +62,40 @@ def build_keys(
     return keys, depths
 
 
-def _query_variants(q: torch.Tensor, shift: int, flips: bool) -> list[torch.Tensor]:
-    """Cyclic-shift (and optional flip) variants of a query batch (B, H, W)."""
-    bases = [q]
-    if flips:
-        bases += [torch.flip(q, [2]), torch.flip(q, [1]), torch.flip(q, [1, 2])]
-    out = []
-    for b in bases:
-        for dh in range(-shift, shift + 1):
-            for dw in range(-shift, shift + 1):
-                out.append(torch.roll(b, shifts=(dh, dw), dims=(1, 2)))
-    return out
+def variant_specs(shift: int, flips: bool) -> list[tuple[int, int, int]]:
+    """(flip_code, dh, dw) for every searched variant; flip_code 0=id,1=h,2=v,3=hv."""
+    codes = [0, 1, 2, 3] if flips else [0]
+    return [(f, dh, dw) for f in codes
+            for dh in range(-shift, shift + 1)
+            for dw in range(-shift, shift + 1)]
+
+
+def _apply_variant(q: torch.Tensor, spec: tuple[int, int, int]) -> torch.Tensor:
+    f, dh, dw = spec
+    if f == 1:
+        q = torch.flip(q, [2])
+    elif f == 2:
+        q = torch.flip(q, [1])
+    elif f == 3:
+        q = torch.flip(q, [1, 2])
+    return torch.roll(q, shifts=(dh, dw), dims=(1, 2))
+
+
+def align_key_to_query(key_img: np.ndarray, spec: tuple[int, int, int]) -> np.ndarray:
+    """Inverse-transform a matched key/GT image into the ORIGINAL query frame.
+
+    The search shifts/flips the query to fit the key, so the key maps back with
+    the inverse roll first, then the (self-inverse) flip.
+    """
+    f, dh, dw = spec
+    out = np.roll(key_img, shift=(-dh, -dw), axis=(0, 1))
+    if f == 1:
+        out = out[:, ::-1]
+    elif f == 2:
+        out = out[::-1, :]
+    elif f == 3:
+        out = out[::-1, ::-1]
+    return out.copy()
 
 
 @torch.no_grad()
@@ -83,16 +106,30 @@ def retrieve_batch(
     shift: int = 2,
     flips: bool = False,
     topk: int = 1,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Top-k key indices and cosine similarities per query (max over variants)."""
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Top-k (indices, similarities, variant ids) per query; max over variants.
+
+    variant ids index into variant_specs(shift, flips) and record WHICH
+    shift/flip of the query produced each match (for output re-alignment).
+    """
     q = torch.from_numpy(queries).to(device)
+    specs = variant_specs(shift, flips)
     best = None
-    for variant in _query_variants(q, shift, flips):
+    best_var = None
+    for vi, spec in enumerate(specs):
+        variant = _apply_variant(q, spec)
         v = torch.nn.functional.normalize(variant.reshape(variant.shape[0], -1), dim=1).half()
         sim = v @ keys.T  # (B, N)
-        best = sim if best is None else torch.maximum(best, sim)
+        if best is None:
+            best = sim
+            best_var = torch.zeros_like(sim, dtype=torch.int16)
+        else:
+            better = sim > best
+            best = torch.where(better, sim, best)
+            best_var = torch.where(better, torch.tensor(vi, dtype=torch.int16, device=sim.device), best_var)
     sims, idx = torch.topk(best.float(), k=topk, dim=1)
-    return idx.cpu().numpy(), sims.cpu().numpy()
+    var = torch.gather(best_var, 1, idx).cpu().numpy()
+    return idx.cpu().numpy(), sims.cpu().numpy(), var
 
 
 def blend_depths(depth_paths: list[Path], idx: np.ndarray, sims: np.ndarray) -> np.ndarray:
@@ -102,6 +139,23 @@ def blend_depths(depth_paths: list[Path], idx: np.ndarray, sims: np.ndarray) -> 
     acc = None
     for i, wi in zip(idx, w):
         d = load_image01(depth_paths[int(i)]) * 255.0
+        acc = wi * d if acc is None else acc + wi * d
+    return np.clip(np.round(acc), 0, 255).astype(np.uint8)
+
+
+def blend_depths_aligned(
+    depth_paths: list[Path],
+    idx: np.ndarray,
+    sims: np.ndarray,
+    var_ids: np.ndarray,
+    specs: list[tuple[int, int, int]],
+) -> np.ndarray:
+    """Softmax-weighted blend of top-k GT maps, each re-aligned to the query frame."""
+    w = np.exp(sims - sims.max())
+    w = w / w.sum()
+    acc = None
+    for i, wi, vi in zip(idx, w, var_ids):
+        d = align_key_to_query(load_image01(depth_paths[int(i)]) * 255.0, specs[int(vi)])
         acc = wi * d if acc is None else acc + wi * d
     return np.clip(np.round(acc), 0, 255).astype(np.uint8)
 

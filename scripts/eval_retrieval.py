@@ -67,8 +67,8 @@ def main() -> None:
             site_dir = root / "train" / "SEM" / f"Depth_{bucket}" / f"site_{site_id}"
             imgs = np.stack([standardize(load_image01(p))
                              for p in sorted(site_dir.glob("*.png"))])
-            idx, sims = retrieve_batch(imgs, keys, device, shift=args.shift,
-                                       flips=args.flips, topk=1)
+            idx, sims, _ = retrieve_batch(imgs, keys, device, shift=args.shift,
+                                          flips=args.flips, topk=1)
             top1 = idx[:, 0]
             modal = Counter(top1.tolist()).most_common(1)[0]
             site_hits.append(modal[1] / len(top1))
