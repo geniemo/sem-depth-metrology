@@ -1,0 +1,25 @@
+seed: 42
+data:
+  sim_sem_dir: data/raw/simulation_data/SEM
+  sim_depth_dir: data/raw/simulation_data/Depth
+  val_fraction: 0.1
+model:
+  encoder: resnet34
+  pretrained: true
+train:
+  epochs: 40
+  batch_size: 256
+  lr: 3.0e-4
+  weight_decay: 1.0e-4
+  num_workers: 8
+  amp: true
+  augment: true
+  appearance:
+    brightness: [-0.05, 0.22]   # spans the real per-image mean band (real mean +0.06, widest sites ~+0.2)
+    contrast: [0.85, 1.30]      # real std / sim std = 1.14, jitter around it
+    blur_sigma: [0.0, 1.5]      # real images are visibly softer than sim
+    noise_std: [0.0, 0.04]
+out:
+  run_name: e1_appearance_r34
+  runs_dir: experiments/runs
+  results_csv: experiments/results.csv

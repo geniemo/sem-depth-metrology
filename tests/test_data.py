@@ -94,3 +94,25 @@ def test_image_dir_dataset_sorted(synth_root):
     ds = ImageDirDataset(synth_root / "test" / "SEM")
     names = [ds[i]["name"] for i in range(len(ds))]
     assert names == sorted(names) and len(names) == 4
+
+
+def test_appearance_augment_image_only(synth_root):
+    spec = {"brightness": [0.1, 0.1], "contrast": [1.2, 1.2],
+            "blur_sigma": [0.0, 0.0], "noise_std": [0.0, 0.0]}
+    ds_aug = SimDataset(_pairs(synth_root), appearance=spec)
+    ds_raw = SimDataset(_pairs(synth_root))
+    a, r = ds_aug[0], ds_raw[0]
+    assert torch.equal(a["target"], r["target"])  # target untouched
+    assert not torch.equal(a["image"], r["image"])  # image jittered
+    expected = (1.2 * (r["image"] - 0.5) + 0.5 + 0.1).clamp(0, 1)
+    assert torch.allclose(a["image"], expected, atol=1e-6)
+
+
+def test_appearance_blur_and_noise_stay_in_range(synth_root):
+    spec = {"brightness": [0.2, 0.2], "contrast": [1.3, 1.3],
+            "blur_sigma": [1.0, 1.0], "noise_std": [0.04, 0.04]}
+    ds = SimDataset(_pairs(synth_root), appearance=spec)
+    for i in range(4):
+        img = ds[i]["image"]
+        assert 0.0 <= img.min() and img.max() <= 1.0
+        assert img.dtype == torch.float32

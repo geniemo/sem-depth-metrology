@@ -73,12 +73,60 @@ def _to_tensor(arr: np.ndarray) -> torch.Tensor:
     return torch.from_numpy(arr.copy()).unsqueeze(0)
 
 
+def _gaussian_blur(image: np.ndarray, sigma: float) -> np.ndarray:
+    """Separable Gaussian blur via shifted-slice accumulation (edge padding)."""
+    radius = max(1, int(3.0 * sigma + 0.5))
+    xs = np.arange(-radius, radius + 1, dtype=np.float32)
+    kernel = np.exp(-(xs ** 2) / (2.0 * sigma ** 2))
+    kernel /= kernel.sum()
+    out = image
+    for axis in (0, 1):
+        pad = [(0, 0), (0, 0)]
+        pad[axis] = (radius, radius)
+        padded = np.pad(out, pad, mode="edge")
+        acc = np.zeros_like(out)
+        for i, w in enumerate(kernel):
+            sl = [slice(None), slice(None)]
+            sl[axis] = slice(i, i + out.shape[axis])
+            acc += w * padded[tuple(sl)]
+        out = acc
+    return out.astype(np.float32)
+
+
+def _apply_appearance(image: np.ndarray, spec: dict) -> np.ndarray:
+    """Input-only appearance jitter (brightness/contrast/blur/noise), [0,1] domain.
+
+    Randomizes the sim appearance toward the real domain's wider band. Applied
+    to the SEM image only — never to the depth target.
+    """
+    lo, hi = spec.get("contrast", (1.0, 1.0))
+    c = random.uniform(lo, hi)
+    lo, hi = spec.get("brightness", (0.0, 0.0))
+    b = random.uniform(lo, hi)
+    image = c * (image - 0.5) + 0.5 + b
+    lo, hi = spec.get("blur_sigma", (0.0, 0.0))
+    s = random.uniform(lo, hi)
+    if s > 0.05:
+        image = _gaussian_blur(image, s)
+    lo, hi = spec.get("noise_std", (0.0, 0.0))
+    n = random.uniform(lo, hi)
+    if n > 0:
+        image = image + np.random.normal(0.0, n, image.shape).astype(np.float32)
+    return np.clip(image, 0.0, 1.0)
+
+
 class SimDataset(Dataset):
     """(SEM image, depth map) pairs; one item per SEM realization (itr)."""
 
-    def __init__(self, pairs: list[SimPair], augment: bool = False):
+    def __init__(
+        self,
+        pairs: list[SimPair],
+        augment: bool = False,
+        appearance: dict | None = None,
+    ):
         self.items = [(p.sem_paths[k], p.depth_path) for p in pairs for k in range(len(p.sem_paths))]
         self.augment = augment
+        self.appearance = appearance
 
     def __len__(self) -> int:
         return len(self.items)
@@ -91,6 +139,8 @@ class SimDataset(Dataset):
                 image, target = image[:, ::-1], target[:, ::-1]
             if random.random() < 0.5:
                 image, target = image[::-1, :], target[::-1, :]
+        if self.appearance:
+            image = _apply_appearance(image, self.appearance)
         return {"image": _to_tensor(image), "target": _to_tensor(target)}
 
 

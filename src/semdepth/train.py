@@ -40,7 +40,7 @@ def run_training(cfg: dict) -> dict:
 
     pairs = list_sim_pairs(Path(d["sim_sem_dir"]), Path(d["sim_depth_dir"]))
     train_pairs, val_pairs = split_pairs(pairs, d["val_fraction"], cfg["seed"])
-    train_ds = SimDataset(train_pairs, augment=tr["augment"])
+    train_ds = SimDataset(train_pairs, augment=tr["augment"], appearance=tr.get("appearance"))
     val_ds = SimDataset(val_pairs, augment=False)
     train_dl = DataLoader(
         train_ds, batch_size=tr["batch_size"], shuffle=True,
