@@ -1,3 +1,4 @@
 date,run_name,zip,sim_val_rmse255,raw_proxy_rmse,cal_proxy_rmse,proxy_corr,lb_public_rmse,note
 2026-08-24,s1_baseline_r34,submission_s1_baseline.zip,2.0846,11.9482,5.3657,0.8752,8.00021,rank 118 of 172 submitting teams (790 registered); pure-sim baseline calibration point
 2026-08-24,e2_weak_r34,submission_e2_weak.zip,2.6360,12.5299,1.8353,0.9862,5.32517,rank 39 of 172; local gate <-> LB correlation confirmed
+2026-08-24,e3_selftrain_r34,submission_e3_selftrain.zip,2.3437,,,,,pending upload — self-training on E2 pseudo labels
