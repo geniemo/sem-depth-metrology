@@ -1111,9 +1111,9 @@ git commit -m "feat: add config-driven training loop with checkpoint and results
 **Interfaces:**
 - Consumes: Task 5 `ImageDirDataset`, `RealDataset` / Task 6 `UnetTimm`
 - Produces:
-  - `infer.predict_dir(model, sem_dir: Path, out_dir: Path, device: str, batch_size: int = 256, flip_tta: bool = False) -> int` — 입력 PNG마다 같은 파일명의 uint8 depth PNG 저장, 개수 반환
+  - `infer.predict_dir(model, sem_dir: Path, out_dir: Path, device: str, batch_size: int = 256, flip_tta: bool = False, num_workers: int = 0) -> int` — 입력 PNG마다 같은 파일명의 uint8 depth PNG 저장, 개수 반환 (워커 기본 0 — fork 경고 없는 pristine 출력)
   - `infer.make_submission_zip(pred_dir: Path, zip_path: Path) -> int` — pred_dir의 PNG를 평평하게 zip, 개수 반환
-  - `proxy.real_proxy_rmse(model, dataset: RealDataset, device: str, batch_size: int = 256) -> float` — `mean(pred)*255` vs `avg_depth` 의 RMSE (제출 없는 도메인 갭 지표)
+  - `proxy.real_proxy_rmse(model, dataset: RealDataset, device: str, batch_size: int = 256, num_workers: int = 0) -> float` — `mean(pred)*255` vs `avg_depth` 의 RMSE (제출 없는 도메인 갭 지표)
   - CLI: `uv run python scripts/predict.py -c configs/baseline.yaml --ckpt experiments/runs/<run>/best.pt --input <sem_dir> --out <pred_dir> [--zip <zip_path>] [--tta]`
 
 - [ ] **Step 1: 실패하는 테스트 작성** — `tests/test_infer.py`
@@ -1122,10 +1122,16 @@ git commit -m "feat: add config-driven training loop with checkpoint and results
 import zipfile
 
 import numpy as np
+import torch
 from PIL import Image
 
 from semdepth.infer import make_submission_zip, predict_dir
 from semdepth.model import UnetTimm
+
+
+class _IdentityModel(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x
 
 
 def test_predict_dir_and_zip(synth_root, tmp_path):
@@ -1141,6 +1147,20 @@ def test_predict_dir_and_zip(synth_root, tmp_path):
     with zipfile.ZipFile(tmp_path / "submission.zip") as zf:
         assert sorted(zf.namelist()) == in_names
     assert n_zip == 4
+
+
+def test_predict_tta_unflips_before_averaging(synth_root, tmp_path):
+    n = predict_dir(
+        _IdentityModel(), synth_root / "test" / "SEM", tmp_path / "pred_tta",
+        device="cpu", flip_tta=True,
+    )
+    assert n == 4
+    for p in sorted((synth_root / "test" / "SEM").glob("*.png")):
+        out = np.array(Image.open(tmp_path / "pred_tta" / p.name))
+        src = np.array(Image.open(p))
+        # identity model + correct flip->unflip == exact uint8 roundtrip;
+        # a missing/misaxised unflip would average a mirrored copy in and break this
+        assert np.array_equal(out, src)
 ```
 
 `tests/test_proxy.py`
@@ -1198,12 +1218,13 @@ def predict_dir(
     device: str,
     batch_size: int = 256,
     flip_tta: bool = False,
+    num_workers: int = 0,
 ) -> int:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     model = model.to(device).eval()
     ds = ImageDirDataset(Path(sem_dir))
-    dl = DataLoader(ds, batch_size=batch_size, num_workers=4)
+    dl = DataLoader(ds, batch_size=batch_size, num_workers=num_workers)
     n = 0
     for batch in tqdm(dl, desc="predict"):
         x = batch["image"].to(device)
@@ -1236,14 +1257,18 @@ from semdepth.data import RealDataset
 
 @torch.no_grad()
 def real_proxy_rmse(
-    model: torch.nn.Module, dataset: RealDataset, device: str, batch_size: int = 256
+    model: torch.nn.Module,
+    dataset: RealDataset,
+    device: str,
+    batch_size: int = 256,
+    num_workers: int = 0,
 ) -> float:
     """RMSE between predicted-map means (0-255) and given average depths.
 
     Submission-free proxy that quantifies the sim-to-real domain gap.
     """
     model = model.to(device).eval()
-    dl = DataLoader(dataset, batch_size=batch_size, num_workers=4)
+    dl = DataLoader(dataset, batch_size=batch_size, num_workers=num_workers)
     se_sum, n = 0.0, 0
     for batch in dl:
         x = batch["image"].to(device)
