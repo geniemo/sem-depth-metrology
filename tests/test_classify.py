@@ -38,3 +38,11 @@ def test_predict_buckets_shapes(synth_root):
     preds = predict_buckets(model, [r[0] for r in recs], device="cpu", batch_size=4)
     assert preds.shape == (9,)
     assert set(preds.tolist()) <= {0, 1, 2, 3}
+
+
+def test_bucket_dataset_augment_flag(synth_root):
+    recs = list_real_labeled(synth_root / "train" / "SEM")
+    ds = BucketDataset(recs, augment=True)
+    item = ds[0]
+    assert item["image"].shape == (1, 72, 48)
+    assert 0.0 <= item["image"].min() and item["image"].max() <= 1.0

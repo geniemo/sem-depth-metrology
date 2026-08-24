@@ -50,16 +50,22 @@ def split_by_site(
 
 
 class BucketDataset(Dataset):
-    def __init__(self, records: list[tuple[Path, int, str]]):
+    def __init__(self, records: list[tuple[Path, int, str]], augment: bool = False):
         self.records = records
+        self.augment = augment
 
     def __len__(self) -> int:
         return len(self.records)
 
     def __getitem__(self, i: int) -> dict:
         path, label, _site = self.records[i]
-        img = torch.from_numpy(load_image01(path)).unsqueeze(0)
-        return {"image": img, "label": label}
+        img = load_image01(path)
+        if self.augment:
+            if random.random() < 0.5:
+                img = img[:, ::-1]
+            if random.random() < 0.5:
+                img = img[::-1, :]
+        return {"image": torch.from_numpy(img.copy()).unsqueeze(0), "label": label}
 
 
 class BucketClassifier(nn.Module):
@@ -80,7 +86,8 @@ def train_classifier(cfg: dict) -> dict:
     device = tr.get("device", "cuda" if torch.cuda.is_available() else "cpu")
     records = list_real_labeled(Path(cfg["data"]["real_sem_root"]))
     train_recs, val_recs = split_by_site(records, cfg["data"]["val_fraction"], cfg["seed"])
-    train_dl = DataLoader(BucketDataset(train_recs), batch_size=tr["batch_size"],
+    train_dl = DataLoader(BucketDataset(train_recs, augment=tr.get("augment", False)),
+                          batch_size=tr["batch_size"],
                           shuffle=True, num_workers=tr["num_workers"], drop_last=True)
     val_dl = DataLoader(BucketDataset(val_recs), batch_size=tr["batch_size"],
                         shuffle=False, num_workers=tr["num_workers"])
