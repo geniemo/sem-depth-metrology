@@ -19,6 +19,12 @@
 - 각 태스크 커밋 전 `uv run pytest -q` 통과 필수.
 - 깊이 값 규약: 내부 연산은 `[0,1]` 정규화(float32), 리더보드/리포트 지표는 **0–255 스케일 RMSE**(`rmse_255`)로 통일.
 - Task 9~12는 실제 데이터(`data/raw/`) 필요 — 데이터 도착 전에는 Task 8까지만 진행.
+- **실측 데이터 레이아웃(2026-08-24 압축 해제로 확정)** — 모든 데이터 코드는 이 구조를 따른다:
+  - `simulation_data/SEM/Case_{1..4}/{80..84}/<base>_itr{0,1}.png`, `simulation_data/Depth/Case_{1..4}/{80..84}/<base>.png` (SEM 173,304 / Depth 86,652 — 대회 페이지의 "259,956"은 SEM+Depth 합계)
+  - **동일 `<base>` 이름이 Case_1~4에 전부 반복**(21,663개 완전 중복) → 스플릿은 반드시 `<base>`(구조 정체성, group_id) 단위. 버킷(80~84)은 케이스 내에서 서로소.
+  - `train/SEM/Depth_{110,120,130,140}/site_XXXXX/SEM_XXXXXX.png` 60,665장(페이지의 60,664는 오기), 라벨은 **site 단위**: `train/average_depth.csv` 2,059행, 헤더 `0,1`, 키 `depth_140_site_00233` ↔ 폴더 `Depth_140/site_00233`
+  - `test/SEM/XXXXXX.png` 25,988장(평면), sample_submission 없음
+  - 모든 이미지 48×72(폭×높이, 배열 shape (72,48)), 8-bit grayscale
 - 대회 데이터는 재배포 금지 약관 — 리포트 그림에 원본 영상을 쓸 때도 소량 예시로 제한.
 
 ---
@@ -324,14 +330,16 @@ git commit -m "feat: add rmse metrics and experiment results logger"
 
 ```
 <root>/
-  simulation_data/SEM/Case_{i:04d}_itr{0,1}.png   # 8-bit grayscale, H=48 W=72
-  simulation_data/Depth/Case_{i:04d}.png          # 8-bit grayscale depth map
-  train/SEM/real_{i:04d}.png                      # real-domain SEM (라벨: 평균 깊이만)
-  train/average_depth.csv                         # columns: name, average_depth
-  test/SEM/test_{i:04d}.png
+  simulation_data/SEM/Case_{1,2}/{80,81}/struct_<bucket>_<j>_itr{0,1}.png  # 8-bit L, (72,48)
+  simulation_data/Depth/Case_{1,2}/{80,81}/struct_<bucket>_<j>.png         # depth map
+  train/SEM/Depth_{110,120}/site_XXXXX/SEM_XXXXXX.png                      # site당 3장
+  train/average_depth.csv   # 헤더 "0,1"; 행: depth_110_site_00000,<float> (site 단위 라벨)
+  test/SEM/000000.png ...   # 평면
 ```
 
-주의: 이 구조·컬럼명은 스펙 기반 가정이며 Task 9(데이터 인테이크)에서 실데이터와 대조해 확정한다. 경로·컬럼명은 전부 config로 주입되므로 실데이터가 달라도 코드는 그대로다.
+실데이터의 핵심 성질을 그대로 재현한다: **같은 구조 이름이 두 Case에 반복**되고(스플릿
+누수 테스트의 근거), 같은 Case 안에서 버킷(80/81)끼리는 이름이 서로소이며, depth map은
+Case가 달라도 동일하고, 실제 train 라벨은 이미지가 아니라 site 단위다.
 
 - [ ] **Step 1: 실패하는 테스트 작성** — `tests/test_conftest.py`
 
@@ -342,14 +350,21 @@ from PIL import Image
 
 
 def test_synth_layout(synth_root):
-    sems = sorted((synth_root / "simulation_data" / "SEM").glob("*.png"))
-    depths = sorted((synth_root / "simulation_data" / "Depth").glob("*.png"))
-    assert len(sems) == 2 * len(depths) == 12  # 6 cases x itr0/itr1
+    sems = sorted((synth_root / "simulation_data" / "SEM").rglob("*.png"))
+    depths = sorted((synth_root / "simulation_data" / "Depth").rglob("*.png"))
+    assert len(sems) == 2 * len(depths) == 24  # 2 cases x 2 buckets x 3 structs x itr0/itr1
     img = np.array(Image.open(sems[0]))
-    assert img.shape == (48, 72) and img.dtype == np.uint8
+    assert img.shape == (72, 48) and img.dtype == np.uint8
+    # the same structure names repeat across both cases (real-data property)
+    names = {p.name for p in depths}
+    assert len(names) == 6
+    for n in names:
+        assert len([p for p in depths if p.name == n]) == 2
     df = pd.read_csv(synth_root / "train" / "average_depth.csv")
-    assert list(df.columns) == ["name", "average_depth"]
-    assert len(df) == len(list((synth_root / "train" / "SEM").glob("*.png"))) == 5
+    assert list(df.columns) == ["0", "1"]
+    assert len(df) == 3  # one label row per site, not per image
+    assert str(df.iloc[0, 0]).startswith("depth_")
+    assert len(list((synth_root / "train" / "SEM").rglob("*.png"))) == 9
     assert len(list((synth_root / "test" / "SEM").glob("*.png"))) == 4
 ```
 
@@ -368,7 +383,7 @@ import pandas as pd
 import pytest
 from PIL import Image
 
-HW = (48, 72)
+HW = (72, 48)  # (rows, cols) — matches the real data (PIL reports size 48x72)
 
 
 def _save_gray(path: Path, arr: np.ndarray) -> None:
@@ -386,24 +401,38 @@ def _depth_pattern(rng: np.random.Generator) -> np.ndarray:
     return np.clip(depth, 0, 255)
 
 
-def make_synth_data(root: Path, n_cases: int = 6, n_real: int = 5, n_test: int = 4) -> Path:
+def make_synth_data(root: Path) -> Path:
     rng = np.random.default_rng(0)
-    for i in range(n_cases):
+    # simulation: same structure names (and identical depth maps) repeated across cases
+    for bucket in ["80", "81"]:
+        for j in range(3):
+            name = f"struct_{bucket}_{j}"
+            depth = _depth_pattern(rng)
+            for case in ["Case_1", "Case_2"]:
+                _save_gray(
+                    root / "simulation_data" / "Depth" / case / bucket / f"{name}.png", depth
+                )
+                for k in range(2):  # two noise realizations of the same structure
+                    sem = np.clip(depth + rng.normal(0, 12, HW), 0, 255)
+                    _save_gray(
+                        root / "simulation_data" / "SEM" / case / bucket / f"{name}_itr{k}.png",
+                        sem,
+                    )
+    # real train: 3 sites x 3 images, one average-depth label per SITE
+    rows, n = [], 0
+    for bucket, site in [("110", "site_00000"), ("110", "site_00001"), ("120", "site_00002")]:
         depth = _depth_pattern(rng)
-        _save_gray(root / "simulation_data" / "Depth" / f"Case_{i:04d}.png", depth)
-        for k in range(2):  # two noise realizations of the same structure
-            sem = np.clip(depth + rng.normal(0, 12, HW), 0, 255)
-            _save_gray(root / "simulation_data" / "SEM" / f"Case_{i:04d}_itr{k}.png", sem)
-    rows = []
-    for i in range(n_real):
-        depth = _depth_pattern(rng)
-        sem = np.clip(depth + rng.normal(0, 20, HW), 0, 255)
-        _save_gray(root / "train" / "SEM" / f"real_{i:04d}.png", sem)
-        rows.append({"name": f"real_{i:04d}.png", "average_depth": float(depth.mean())})
+        for _ in range(3):
+            sem = np.clip(depth + rng.normal(0, 20, HW), 0, 255)
+            _save_gray(
+                root / "train" / "SEM" / f"Depth_{bucket}" / site / f"SEM_{n:06d}.png", sem
+            )
+            n += 1
+        rows.append({"0": f"depth_{bucket}_{site}", "1": float(depth.mean())})
     pd.DataFrame(rows).to_csv(root / "train" / "average_depth.csv", index=False)
-    for i in range(n_test):
+    for i in range(4):
         sem = np.clip(_depth_pattern(rng) + rng.normal(0, 20, HW), 0, 255)
-        _save_gray(root / "test" / "SEM" / f"test_{i:04d}.png", sem)
+        _save_gray(root / "test" / "SEM" / f"{i:06d}.png", sem)
     return root
 
 
@@ -435,17 +464,18 @@ git commit -m "test: add synthetic dataset fixture mirroring competition layout"
 **Interfaces:**
 - Consumes: `synth_root` 픽스처 (Task 4)
 - Produces:
-  - `SimPair` dataclass: `case_id: str`, `sem_paths: list[Path]` (itr 순서), `depth_path: Path`
-  - `list_sim_pairs(sem_dir: Path, depth_dir: Path) -> list[SimPair]` — `<case>_itr<k>.png` ↔ `<case>.png` 매칭, 불일치 시 ValueError
-  - `split_pairs(pairs: list[SimPair], val_fraction: float, seed: int) -> tuple[list[SimPair], list[SimPair]]` — case 단위 분할(같은 case의 itr들은 같은 split — 누수 방지)
+  - `SimPair` dataclass: `group_id: str`(구조 정체성 = depth 파일 stem — Case가 달라도 동일), `case: str`, `bucket: str`, `sem_paths: tuple[Path, ...]`(itr 순서), `depth_path: Path`
+  - `list_sim_pairs(sem_root: Path, depth_root: Path) -> list[SimPair]` — 재귀 탐색; SEM `<case>/<bucket>/<base>_itr<k>.png` ↔ Depth `<case>/<bucket>/<base>.png`를 상대 경로로 매칭; 이름 규칙 위반·짝 없는 SEM/Depth는 ValueError
+  - `split_pairs(pairs: list[SimPair], val_fraction: float, seed: int) -> tuple[list[SimPair], list[SimPair]]` — **group_id(구조 이름) 단위 분할**: 같은 구조는 Case·itr가 달라도 전부 같은 쪽 (실데이터에서 동일 구조가 Case_1~4에 반복되므로 그보다 가는 단위는 전부 누수)
   - `load_image01(path: Path) -> np.ndarray` — float32 [H,W], [0,1]
   - `SimDataset(pairs, augment: bool = False)` — 항목: `{"image": FloatTensor[1,H,W], "target": FloatTensor[1,H,W]}`; 길이 = itr 포함 SEM 장수
-  - `RealDataset(sem_dir, csv_path, name_col="name", depth_col="average_depth")` — 항목: `{"image": FloatTensor[1,H,W], "avg_depth": float(0-255 스케일 원값), "name": str}`
-  - `ImageDirDataset(sem_dir)` — 항목: `{"image": FloatTensor[1,H,W], "name": str}` (추론용, 이름순 정렬)
+  - `RealDataset(sem_root: Path, csv_path: Path)` — csv 키 `depth_<bucket>_site_<id>` ↔ 폴더 `Depth_<bucket>/site_<id>`; 항목: `{"image": FloatTensor[1,H,W], "avg_depth": float(site 평균 깊이, 0-255 스케일 원값), "name": str}`; 길이 = 모든 site의 모든 이미지 수 (site 라벨이 그 site의 각 이미지에 공유됨)
+  - `ImageDirDataset(sem_dir)` — 항목: `{"image": FloatTensor[1,H,W], "name": str}` (추론용, 평면 폴더, 이름순 정렬)
 
 - [ ] **Step 1: 실패하는 테스트 작성** — `tests/test_data.py`
 
 ```python
+import pytest
 import torch
 
 from semdepth.data import (
@@ -457,45 +487,60 @@ from semdepth.data import (
 )
 
 
-def test_pairing(synth_root):
-    pairs = list_sim_pairs(
+def _pairs(synth_root):
+    return list_sim_pairs(
         synth_root / "simulation_data" / "SEM", synth_root / "simulation_data" / "Depth"
     )
-    assert len(pairs) == 6
+
+
+def test_pairing(synth_root):
+    pairs = _pairs(synth_root)
+    assert len(pairs) == 12  # 2 cases x 2 buckets x 3 structs
     assert all(len(p.sem_paths) == 2 for p in pairs)
-    assert pairs[0].depth_path.stem == pairs[0].case_id
+    assert all(p.depth_path.stem == p.group_id for p in pairs)
+    by_group: dict[str, set] = {}
+    for p in pairs:
+        by_group.setdefault(p.group_id, set()).add(p.case)
+    assert len(by_group) == 6  # same structure appears once per case
+    assert all(cases == {"Case_1", "Case_2"} for cases in by_group.values())
+
+
+def test_pairing_rejects_orphan_sem(synth_root):
+    orphan = synth_root / "simulation_data" / "SEM" / "Case_1" / "80" / "orphan_itr0.png"
+    orphan.write_bytes((synth_root / "test" / "SEM" / "000000.png").read_bytes())
+    with pytest.raises(ValueError):
+        _pairs(synth_root)
 
 
 def test_group_split_no_leak(synth_root):
-    pairs = list_sim_pairs(
-        synth_root / "simulation_data" / "SEM", synth_root / "simulation_data" / "Depth"
-    )
+    pairs = _pairs(synth_root)
     tr, va = split_pairs(pairs, val_fraction=0.34, seed=7)
-    assert len(tr) + len(va) == 6 and len(va) == 2
-    assert {p.case_id for p in tr}.isdisjoint({p.case_id for p in va})
+    assert len(tr) + len(va) == 12
+    tr_groups = {p.group_id for p in tr}
+    va_groups = {p.group_id for p in va}
+    assert tr_groups.isdisjoint(va_groups)  # a structure never crosses the boundary
+    assert len(va_groups) == 2 and len(va) == 4  # 2 groups x 2 cases
     tr2, va2 = split_pairs(pairs, val_fraction=0.34, seed=7)
-    assert [p.case_id for p in va2] == [p.case_id for p in va]  # deterministic
+    assert sorted(p.depth_path for p in va2) == sorted(p.depth_path for p in va)
 
 
 def test_sim_dataset_items(synth_root):
-    pairs = list_sim_pairs(
-        synth_root / "simulation_data" / "SEM", synth_root / "simulation_data" / "Depth"
-    )
-    ds = SimDataset(pairs)
-    assert len(ds) == 12
+    ds = SimDataset(_pairs(synth_root))
+    assert len(ds) == 24
     item = ds[0]
-    assert item["image"].shape == (1, 48, 72) and item["image"].dtype == torch.float32
-    assert item["target"].shape == (1, 48, 72)
+    assert item["image"].shape == (1, 72, 48) and item["image"].dtype == torch.float32
+    assert item["target"].shape == (1, 72, 48)
     assert 0.0 <= item["image"].min() and item["image"].max() <= 1.0
 
 
-def test_real_dataset_items(synth_root):
+def test_real_dataset_site_labels(synth_root):
     ds = RealDataset(synth_root / "train" / "SEM", synth_root / "train" / "average_depth.csv")
-    assert len(ds) == 5
-    item = ds[0]
-    assert item["image"].shape == (1, 48, 72)
-    assert 0.0 <= item["avg_depth"] <= 255.0
-    assert item["name"].endswith(".png")
+    assert len(ds) == 9  # every image of every site
+    items = [ds[i] for i in range(len(ds))]
+    assert all(it["image"].shape == (1, 72, 48) for it in items)
+    assert all(0.0 <= it["avg_depth"] <= 255.0 for it in items)
+    assert len({round(it["avg_depth"], 6) for it in items}) == 3  # one label per site
+    assert all(it["name"].endswith(".png") for it in items)
 
 
 def test_image_dir_dataset_sorted(synth_root):
@@ -523,13 +568,16 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset
 
-_ITR_RE = re.compile(r"^(?P<case>.+)_itr(?P<k>\d+)$")
+_ITR_RE = re.compile(r"^(?P<base>.+)_itr(?P<k>\d+)$")
+_SITE_RE = re.compile(r"^depth_(?P<bucket>\d+)_site_(?P<site>\d+)$")
 
 
 @dataclass(frozen=True)
 class SimPair:
-    case_id: str
-    sem_paths: list[Path]
+    group_id: str  # structure identity: depth-map stem, shared across cases
+    case: str
+    bucket: str
+    sem_paths: tuple[Path, ...]
     depth_path: Path
 
 
@@ -538,32 +586,45 @@ def load_image01(path: Path) -> np.ndarray:
     return np.asarray(Image.open(path).convert("L"), dtype=np.float32) / 255.0
 
 
-def list_sim_pairs(sem_dir: Path, depth_dir: Path) -> list[SimPair]:
-    by_case: dict[str, list[Path]] = {}
-    for p in sorted(Path(sem_dir).glob("*.png")):
+def list_sim_pairs(sem_root: Path, depth_root: Path) -> list[SimPair]:
+    """Pair SEM <case>/<bucket>/<base>_itr<k>.png with Depth <case>/<bucket>/<base>.png."""
+    sem_root, depth_root = Path(sem_root), Path(depth_root)
+    by_rel: dict[Path, list[Path]] = {}
+    for p in sorted(sem_root.rglob("*.png")):
         m = _ITR_RE.match(p.stem)
         if m is None:
-            raise ValueError(f"unexpected SEM name (no _itr suffix): {p.name}")
-        by_case.setdefault(m["case"], []).append(p)
+            raise ValueError(f"unexpected SEM name (no _itr suffix): {p}")
+        rel = p.relative_to(sem_root).parent / f"{m['base']}.png"
+        by_rel.setdefault(rel, []).append(p)
+    n_depth = sum(1 for _ in depth_root.rglob("*.png"))
+    if n_depth != len(by_rel):
+        raise ValueError(f"{n_depth} depth maps but {len(by_rel)} SEM groups")
     pairs = []
-    for case_id, sems in sorted(by_case.items()):
-        depth = Path(depth_dir) / f"{case_id}.png"
+    for rel, sems in sorted(by_rel.items()):
+        depth = depth_root / rel
         if not depth.exists():
-            raise ValueError(f"depth map missing for case {case_id}")
-        pairs.append(SimPair(case_id, sorted(sems), depth))
+            raise ValueError(f"depth map missing: {depth}")
+        parts = rel.parts
+        case = parts[0] if len(parts) > 1 else ""
+        bucket = parts[1] if len(parts) > 2 else ""
+        pairs.append(SimPair(rel.stem, case, bucket, tuple(sorted(sems)), depth))
     return pairs
 
 
 def split_pairs(
     pairs: list[SimPair], val_fraction: float, seed: int
 ) -> tuple[list[SimPair], list[SimPair]]:
-    """Case-level split; both itr images of a case land on the same side."""
-    idx = list(range(len(pairs)))
-    random.Random(seed).shuffle(idx)
-    n_val = max(1, round(len(pairs) * val_fraction))
-    val_ids = set(idx[:n_val])
-    train = [p for i, p in enumerate(pairs) if i not in val_ids]
-    val = [p for i, p in enumerate(pairs) if i in val_ids]
+    """Structure-level split: a group_id never appears on both sides.
+
+    The same structure is simulated under every case (and twice per case via
+    itr0/itr1); splitting by anything finer would leak it across the boundary.
+    """
+    groups = sorted({p.group_id for p in pairs})
+    random.Random(seed).shuffle(groups)
+    n_val = max(1, round(len(groups) * val_fraction))
+    val_groups = set(groups[:n_val])
+    train = [p for p in pairs if p.group_id not in val_groups]
+    val = [p for p in pairs if p.group_id in val_groups]
     return train, val
 
 
@@ -593,20 +654,20 @@ class SimDataset(Dataset):
 
 
 class RealDataset(Dataset):
-    """Real-domain SEM images with scalar average depth labels (0-255 scale)."""
+    """Real-domain SEM images; the average-depth label is shared per site."""
 
-    def __init__(
-        self,
-        sem_dir: Path,
-        csv_path: Path,
-        name_col: str = "name",
-        depth_col: str = "average_depth",
-    ):
+    def __init__(self, sem_root: Path, csv_path: Path):
         df = pd.read_csv(csv_path)
-        self.records = [
-            (Path(sem_dir) / str(r[name_col]), float(r[depth_col]))
-            for r in df.to_dict("records")
-        ]
+        self.records: list[tuple[Path, float]] = []
+        for key, avg in zip(df.iloc[:, 0], df.iloc[:, 1]):
+            m = _SITE_RE.match(str(key))
+            if m is None:
+                raise ValueError(f"unexpected site key in csv: {key}")
+            site_dir = Path(sem_root) / f"Depth_{m['bucket']}" / f"site_{m['site']}"
+            pngs = sorted(site_dir.glob("*.png"))
+            if not pngs:
+                raise ValueError(f"no images for site {key}: {site_dir}")
+            self.records += [(p, float(avg)) for p in pngs]
 
     def __len__(self) -> int:
         return len(self.records)
@@ -1036,7 +1097,7 @@ def test_predict_dir_and_zip(synth_root, tmp_path):
     out_names = sorted(p.name for p in (tmp_path / "pred").glob("*.png"))
     assert in_names == out_names
     arr = np.array(Image.open(tmp_path / "pred" / out_names[0]))
-    assert arr.dtype == np.uint8 and arr.shape == (48, 72)
+    assert arr.dtype == np.uint8 and arr.shape == (72, 48)
     n_zip = make_submission_zip(tmp_path / "pred", tmp_path / "submission.zip")
     with zipfile.ZipFile(tmp_path / "submission.zip") as zf:
         assert sorted(zf.namelist()) == in_names
@@ -1304,6 +1365,11 @@ git commit -m "docs: record verified dataset layout and align config/fixtures to
 
 **Files:**
 - Create: `scripts/eda.py`, `report/figures/` (산출 그림), `report/eda.md`
+
+주의(레이아웃 확정 반영): 아래 스크립트 코드에서 이미지 샘플링은 중첩 구조를 위해
+`glob` 대신 `rglob`을 사용하고, 그림 4(밝기 vs 평균깊이)는 **site 단위**(site 이미지들의
+평균 밝기 vs site 평균 깊이)로 그린다. 그림 5의 itr 페어는 `list_sim_pairs` 결과를
+그대로 사용하므로 변경 없음. 실행은 controller가 인라인으로 수행하며 이때 반영한다.
 
 **Interfaces:**
 - Consumes: Task 5 `load_image01`, `list_sim_pairs`, `RealDataset` / Task 9의 확정 경로
