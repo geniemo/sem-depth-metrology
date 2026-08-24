@@ -50,6 +50,10 @@ def run_training(cfg: dict) -> dict:
         val_ds, batch_size=tr["batch_size"], shuffle=False,
         num_workers=tr["num_workers"], pin_memory=(device == "cuda"),
     )
+    if len(train_dl) == 0:
+        raise ValueError(
+            f"no training batches: {len(train_ds)} images < batch_size {tr['batch_size']}"
+        )
 
     model = UnetTimm(m["encoder"], pretrained=m["pretrained"]).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=tr["lr"], weight_decay=tr["weight_decay"])
