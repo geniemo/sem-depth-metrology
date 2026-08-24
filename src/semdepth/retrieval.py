@@ -143,6 +143,45 @@ def blend_depths(depth_paths: list[Path], idx: np.ndarray, sims: np.ndarray) -> 
     return np.clip(np.round(acc), 0, 255).astype(np.uint8)
 
 
+@torch.no_grad()
+def refine_shortlist(
+    queries: np.ndarray,  # (B, H, W) standardized
+    cand_idx: np.ndarray,  # (B, K) candidate key indices from the embedding stage
+    keys: torch.Tensor,  # (N, D) L2-normalized fp16 pixel keys
+    device: str,
+    shift: int = 2,
+    flips: bool = False,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Pixel shift-search cosine within each query's candidate shortlist.
+
+    Returns (global key index, similarity, variant id) of the best candidate.
+    """
+    q = torch.from_numpy(queries).to(device)
+    cand = torch.from_numpy(cand_idx.astype(np.int64)).to(device)
+    kp = keys[cand]  # (B, K, D)
+    specs = variant_specs(shift, flips)
+    best = None
+    best_var = None
+    for vi, spec in enumerate(specs):
+        v = torch.nn.functional.normalize(
+            _apply_variant(q, spec).reshape(q.shape[0], -1), dim=1).half()
+        sim = torch.einsum("bd,bkd->bk", v, kp)
+        if best is None:
+            best = sim
+            best_var = torch.zeros_like(sim, dtype=torch.int16)
+        else:
+            better = sim > best
+            best = torch.where(better, sim, best)
+            best_var = torch.where(
+                better, torch.tensor(vi, dtype=torch.int16, device=sim.device), best_var)
+    j = best.float().argmax(dim=1)
+    rows = torch.arange(q.shape[0], device=device)
+    idx = cand[rows, j]
+    return (idx.cpu().numpy(),
+            best.float()[rows, j].cpu().numpy(),
+            best_var[rows, j].cpu().numpy())
+
+
 def blend_depths_aligned(
     depth_paths: list[Path],
     idx: np.ndarray,

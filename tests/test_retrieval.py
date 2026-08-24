@@ -117,3 +117,20 @@ def test_blend_depths_aligned_single(synth_root):
 
     raw = np.asarray(Image.open(depths[0]).convert("L"), dtype=np.float32)
     assert np.array_equal(pred, np.roll(raw, shift=(-1, 2), axis=(0, 1)).round().astype(np.uint8))
+
+
+def test_refine_shortlist_finds_planted_target():
+    from semdepth.retrieval import refine_shortlist, variant_specs, align_key_to_query
+
+    rng = np.random.default_rng(5)
+    keys_raw = [_rand_img(rng) for _ in range(30)]
+    keys = torch.nn.functional.normalize(
+        torch.from_numpy(np.stack([standardize(k).ravel() for k in keys_raw])), dim=1
+    ).half()
+    target = 17
+    q = np.roll(keys_raw[target], shift=(-2, 1), axis=(0, 1))
+    cand = np.array([[3, 17, 8, 25, 11]])  # target hidden in a 5-wide shortlist
+    idx, sims, var = refine_shortlist(standardize(q)[None], cand, keys, device="cpu", shift=2)
+    assert idx[0] == target and sims[0] > 0.999
+    spec = variant_specs(2, False)[int(var[0])]
+    assert np.allclose(align_key_to_query(keys_raw[target], spec), q, atol=1e-6)

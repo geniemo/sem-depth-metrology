@@ -1,0 +1,19 @@
+seed: 42
+data:
+  root: data/raw
+  holdout_sites: 60
+train:
+  encoder: resnet18
+  dim: 128
+  temperature: 0.2
+  max_shift: 2
+  batch_size: 256
+  lr: 3.0e-4
+  weight_decay: 1.0e-4
+  num_workers: 8
+  epochs: 16
+  real_oversample: 1
+out:
+  dir: experiments/runs/embed_lr3.0e-4_ov1_t0.2
+  run_name: embed_lr3.0e-4_ov1_t0.2
+  results_csv: experiments/results.csv

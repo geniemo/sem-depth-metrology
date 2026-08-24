@@ -42,9 +42,10 @@ def main() -> None:
     reals = real_site_identities([r for r in records if r[2] not in holdout])
     holdout_sites = real_site_identities([r for r in records if r[2] in holdout])
     key_paths = [p.sem_paths[0] for p in pairs if p.case == "Case_1"]
-    print(f"identities: sim {len(sims)} + real {len(reals)} | holdout sites {len(holdout_sites)}")
+    print(f"identities: sim {len(sims)} + real {len(reals)}x{tr.get('real_oversample',1)} | holdout {len(holdout_sites)}")
 
-    ds = PairViewDataset(sims + reals, max_shift=tr["max_shift"], seed=cfg["seed"])
+    reals_over = reals * int(tr.get("real_oversample", 1))
+    ds = PairViewDataset(sims + reals_over, max_shift=tr["max_shift"], seed=cfg["seed"])
     dl = DataLoader(ds, batch_size=tr["batch_size"], shuffle=True,
                     num_workers=tr["num_workers"], drop_last=True)
     model = EmbedNet(tr["encoder"], dim=tr["dim"], pretrained=True).to(device)
