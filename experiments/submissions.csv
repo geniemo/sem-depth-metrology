@@ -4,4 +4,5 @@ date,run_name,zip,sim_val_rmse255,raw_proxy_rmse,cal_proxy_rmse,proxy_corr,lb_pu
 2026-08-24,e3_selftrain_r34,submission_e3_selftrain.zip,2.3437,12.7474,1.6092,0.9894,5.62787,private 5.60876; WORSE than E2 despite all local gains — pseudo-label confirmation bias on real pixel shapes; cal-proxy blind to pixel level
 2026-08-24,e6b_itrmean_weak,submission_e6_itrmean.zip,3.0948,12.5042,1.9336,0.9847,5.11307,private 5.10971 rank 35 — NEW BEST; pixel-level gain from frame-averaging hypothesis
 2026-08-24,e8_ensemble_tta,submission_e8_ensemble.zip,,,1.9614,0.9842,4.59729,private 4.61763 rank 26 — ensemble+TTA -0.52 vs best single
-2026-08-24,e10_grand_ensemble,submission_e10_grand.zip,,,,,,pending upload — 6-member grand ensemble (3 recipes x 2 archs x 3 seeds) + flip TTA
+2026-08-24,e10_grand_ensemble,submission_e10_grand.zip,,,,,4.65673,private 4.67668 — WORSE than E8: weak members dilute equal-weight ensemble (quality > quantity)
+2026-08-24,e11_best3,submission_e11_best3.zip,,,,,,optional upload — strongest-3 only (2x convnext + e6b), dilution hypothesis test
