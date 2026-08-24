@@ -1,0 +1,27 @@
+seed: 42
+init_ckpt: experiments/runs/e2_weak_r34/best.pt
+data:
+  sim_sem_dir: data/raw/simulation_data/SEM
+  sim_depth_dir: data/raw/simulation_data/Depth
+  real_sem_root: data/raw/train/SEM
+  real_csv: data/raw/train/average_depth.csv
+  pseudo_sem_root: data/raw/train/SEM
+  pseudo_depth_root: data/pseudo/e2_real_train
+  val_fraction: 0.1
+model:
+  encoder: resnet34
+train:
+  epochs: 12
+  batch_size: 256
+  real_batch: 256
+  lr: 1.0e-4
+  weight_decay: 1.0e-4
+  num_workers: 8
+  amp: true
+  augment: true
+  lambda_real: 1.0
+  refit_sample: 8192
+out:
+  run_name: e3_selftrain_r34
+  runs_dir: experiments/runs
+  results_csv: experiments/results.csv

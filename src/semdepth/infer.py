@@ -19,11 +19,12 @@ def predict_dir(
     batch_size: int = 256,
     flip_tta: bool = False,
     num_workers: int = 0,
+    recursive: bool = False,
 ) -> int:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     model = model.to(device).eval()
-    ds = ImageDirDataset(Path(sem_dir))
+    ds = ImageDirDataset(Path(sem_dir), recursive=recursive)
     dl = DataLoader(ds, batch_size=batch_size, num_workers=num_workers)
     n = 0
     for batch in tqdm(dl, desc="predict"):
@@ -33,7 +34,9 @@ def predict_dir(
             pred = (pred + torch.flip(model(torch.flip(x, [-1])), [-1])) / 2
         arr = (pred.clamp(0, 1) * 255).round().byte().cpu().numpy()
         for name, a in zip(batch["name"], arr):
-            Image.fromarray(a[0].astype(np.uint8), mode="L").save(out_dir / name)
+            dest = out_dir / name  # name is a relative path in recursive mode
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            Image.fromarray(a[0].astype(np.uint8), mode="L").save(dest)
             n += 1
     return n
 

@@ -18,7 +18,13 @@ from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from semdepth.data import RealDataset, SimDataset, list_sim_pairs, split_pairs
+from semdepth.data import (
+    RealDataset,
+    SimDataset,
+    list_pseudo_pairs,
+    list_sim_pairs,
+    split_pairs,
+)
 from semdepth.model import UnetTimm
 from semdepth.results import append_result
 from semdepth.train import evaluate, seed_all
@@ -50,6 +56,10 @@ def run_finetune(cfg: dict) -> dict:
 
     pairs = list_sim_pairs(Path(d["sim_sem_dir"]), Path(d["sim_depth_dir"]))
     train_pairs, val_pairs = split_pairs(pairs, d["val_fraction"], cfg["seed"])
+    if d.get("pseudo_sem_root"):
+        pseudo = list_pseudo_pairs(Path(d["pseudo_sem_root"]), Path(d["pseudo_depth_root"]))
+        print(f"mixing {len(pseudo)} pseudo pairs into {len(train_pairs)} sim train pairs")
+        train_pairs = train_pairs + pseudo  # sim hold-out stays pure sim
     sim_ds = SimDataset(train_pairs, augment=tr["augment"], appearance=tr.get("appearance"))
     val_ds = SimDataset(val_pairs, augment=False)
     sim_dl = DataLoader(

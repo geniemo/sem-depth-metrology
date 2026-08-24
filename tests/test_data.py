@@ -116,3 +116,25 @@ def test_appearance_blur_and_noise_stay_in_range(synth_root):
         img = ds[i]["image"]
         assert 0.0 <= img.min() and img.max() <= 1.0
         assert img.dtype == torch.float32
+
+
+def test_list_pseudo_pairs_matches_tree(synth_root, tmp_path):
+    from semdepth.data import list_pseudo_pairs
+    from semdepth.infer import predict_dir
+    import torch as _torch
+
+    class _Ident(_torch.nn.Module):
+        def forward(self, x):
+            return x
+
+    real_root = synth_root / "train" / "SEM"
+    predict_dir(_Ident(), real_root, tmp_path / "pseudo", device="cpu", recursive=True)
+    pairs = list_pseudo_pairs(real_root, tmp_path / "pseudo")
+    assert len(pairs) == 9
+    assert all(len(p.sem_paths) == 1 for p in pairs)
+    assert all(p.case == "real" for p in pairs)
+    rel = pairs[0].sem_paths[0].relative_to(real_root)
+    assert pairs[0].depth_path == tmp_path / "pseudo" / rel
+    (tmp_path / "pseudo" / rel).unlink()
+    with pytest.raises(ValueError, match="pseudo depth missing"):
+        list_pseudo_pairs(real_root, tmp_path / "pseudo")

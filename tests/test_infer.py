@@ -40,3 +40,17 @@ def test_predict_tta_unflips_before_averaging(synth_root, tmp_path):
         # identity model + correct flip->unflip == exact uint8 roundtrip;
         # a missing/misaxised unflip would average a mirrored copy in and break this
         assert np.array_equal(out, src)
+
+
+def test_predict_dir_recursive_mirrors_tree(synth_root, tmp_path):
+    n = predict_dir(
+        _IdentityModel(), synth_root / "train" / "SEM", tmp_path / "pseudo",
+        device="cpu", recursive=True,
+    )
+    assert n == 9
+    outs = sorted(p.relative_to(tmp_path / "pseudo").as_posix()
+                  for p in (tmp_path / "pseudo").rglob("*.png"))
+    ins = sorted(p.relative_to(synth_root / "train" / "SEM").as_posix()
+                 for p in (synth_root / "train" / "SEM").rglob("*.png"))
+    assert outs == ins
+    assert outs[0].count("/") == 2  # Depth_XXX/site_XXXXX/SEM_XXXXXX.png

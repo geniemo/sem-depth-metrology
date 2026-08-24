@@ -168,15 +168,41 @@ class RealDataset(Dataset):
         return {"image": _to_tensor(load_image01(path)), "avg_depth": avg, "name": path.name}
 
 
-class ImageDirDataset(Dataset):
-    """All PNGs in a directory, sorted by name (inference input)."""
+def list_pseudo_pairs(sem_root: Path, depth_root: Path) -> list[SimPair]:
+    """Pair real SEM images with model-generated pseudo depth maps (same rel path)."""
+    sem_root, depth_root = Path(sem_root), Path(depth_root)
+    pairs = []
+    for p in sorted(sem_root.rglob("*.png")):
+        if any(part.startswith(".") for part in p.parts):
+            continue
+        rel = p.relative_to(sem_root)
+        depth = depth_root / rel
+        if not depth.exists():
+            raise ValueError(f"pseudo depth missing: {depth}")
+        bucket = rel.parts[0] if len(rel.parts) > 1 else ""
+        pairs.append(SimPair(f"pseudo/{rel.as_posix()}", "real", bucket, (p,), depth))
+    return pairs
 
-    def __init__(self, sem_dir: Path):
-        self.paths = sorted(Path(sem_dir).glob("*.png"))
+
+class ImageDirDataset(Dataset):
+    """PNGs in a directory, sorted by name (inference input).
+
+    recursive=True walks subdirectories (hidden dirs excluded) and reports names
+    as POSIX relative paths so callers can mirror the tree on output.
+    """
+
+    def __init__(self, sem_dir: Path, recursive: bool = False):
+        root = Path(sem_dir)
+        if recursive:
+            paths = [p for p in root.rglob("*.png")
+                     if not any(part.startswith(".") for part in p.parts)]
+            self.entries = sorted((p.relative_to(root).as_posix(), p) for p in paths)
+        else:
+            self.entries = sorted((p.name, p) for p in root.glob("*.png"))
 
     def __len__(self) -> int:
-        return len(self.paths)
+        return len(self.entries)
 
     def __getitem__(self, i: int) -> dict:
-        p = self.paths[i]
-        return {"image": _to_tensor(load_image01(p)), "name": p.name}
+        name, p = self.entries[i]
+        return {"image": _to_tensor(load_image01(p)), "name": name}
