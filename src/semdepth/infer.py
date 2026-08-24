@@ -12,7 +12,7 @@ from semdepth.data import ImageDirDataset
 
 @torch.no_grad()
 def predict_dir(
-    model: torch.nn.Module,
+    model: torch.nn.Module | list[torch.nn.Module],
     sem_dir: Path,
     out_dir: Path,
     device: str,
@@ -21,17 +21,23 @@ def predict_dir(
     num_workers: int = 0,
     recursive: bool = False,
 ) -> int:
+    """Write uint8 depth PNGs for every input PNG; a model list is ensembled by mean."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    model = model.to(device).eval()
+    models = model if isinstance(model, (list, tuple)) else [model]
+    models = [m.to(device).eval() for m in models]
     ds = ImageDirDataset(Path(sem_dir), recursive=recursive)
     dl = DataLoader(ds, batch_size=batch_size, num_workers=num_workers)
     n = 0
     for batch in tqdm(dl, desc="predict"):
         x = batch["image"].to(device)
-        pred = model(x)
-        if flip_tta:
-            pred = (pred + torch.flip(model(torch.flip(x, [-1])), [-1])) / 2
+        preds = []
+        for m in models:
+            p = m(x)
+            if flip_tta:
+                p = (p + torch.flip(m(torch.flip(x, [-1])), [-1])) / 2
+            preds.append(p)
+        pred = torch.stack(preds).mean(dim=0)
         arr = (pred.clamp(0, 1) * 255).round().byte().cpu().numpy()
         for name, a in zip(batch["name"], arr):
             dest = out_dir / name  # name is a relative path in recursive mode

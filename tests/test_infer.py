@@ -54,3 +54,19 @@ def test_predict_dir_recursive_mirrors_tree(synth_root, tmp_path):
                  for p in (synth_root / "train" / "SEM").rglob("*.png"))
     assert outs == ins
     assert outs[0].count("/") == 2  # Depth_XXX/site_XXXXX/SEM_XXXXXX.png
+
+
+class _InvertModel(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return 1.0 - x
+
+
+def test_predict_dir_ensemble_averages_models(synth_root, tmp_path):
+    n = predict_dir(
+        [_IdentityModel(), _InvertModel()], synth_root / "test" / "SEM",
+        tmp_path / "pred_ens", device="cpu",
+    )
+    assert n == 4
+    for p in (tmp_path / "pred_ens").glob("*.png"):
+        arr = np.array(Image.open(p))
+        assert arr.min() == arr.max() == 128  # mean of x and 1-x is 0.5 -> 128
