@@ -35,14 +35,26 @@ def standardize(img: np.ndarray) -> np.ndarray:
 
 
 def build_keys(
-    pairs: list[SimPair], blur_sigma: float = 0.7, device: str = "cpu"
+    pairs: list[SimPair],
+    blur_sigma: float = 0.7,
+    device: str = "cpu",
+    translated_root: Path | None = None,
 ) -> tuple[torch.Tensor, list[Path]]:
-    """L2-normalized key matrix (N, H*W) fp16 and the aligned GT depth paths."""
+    """L2-normalized key matrix (N, H*W) fp16 and the aligned GT depth paths.
+
+    Default keys are itr-mean + blur (no-GAN alignment). With translated_root,
+    keys are the GAN-translated images stored under the depth-map relative path
+    (<root>/<Case_X>/<bucket>/<base>.png).
+    """
     rows, depths = [], []
     for p in pairs:
-        img = np.mean([load_image01(q) for q in p.sem_paths], axis=0, dtype=np.float32)
-        if blur_sigma > 0.05:
-            img = _gaussian_blur(img, blur_sigma)
+        if translated_root is not None:
+            rel = p.depth_path.relative_to(p.depth_path.parents[2])
+            img = load_image01(Path(translated_root) / rel)
+        else:
+            img = np.mean([load_image01(q) for q in p.sem_paths], axis=0, dtype=np.float32)
+            if blur_sigma > 0.05:
+                img = _gaussian_blur(img, blur_sigma)
         rows.append(standardize(img).ravel())
         depths.append(p.depth_path)
     keys = torch.from_numpy(np.stack(rows)).to(device)

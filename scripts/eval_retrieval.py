@@ -35,6 +35,7 @@ def main() -> None:
     ap.add_argument("--blur", type=float, default=0.7)
     ap.add_argument("--shift", type=int, default=2)
     ap.add_argument("--flips", action="store_true")
+    ap.add_argument("--translated-root", default=None)
     ap.add_argument("--batch", type=int, default=512)
     args = ap.parse_args()
     root = Path(args.root)
@@ -57,7 +58,8 @@ def main() -> None:
     for bucket in ("110", "120", "130", "140"):
         case = BUCKET_TO_CASE[bucket]
         cpairs = by_case[case]
-        keys, depths = build_keys(cpairs, blur_sigma=args.blur, device=device)
+        keys, depths = build_keys(cpairs, blur_sigma=args.blur, device=device,
+                                  translated_root=args.translated_root)
 
         picked = rng.sample(sites_by_bucket[bucket], args.sites_per_bucket)
         site_hits, errs, sims_c = [], [], []
