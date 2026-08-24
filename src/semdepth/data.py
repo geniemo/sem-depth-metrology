@@ -116,15 +116,31 @@ def _apply_appearance(image: np.ndarray, spec: dict) -> np.ndarray:
 
 
 class SimDataset(Dataset):
-    """(SEM image, depth map) pairs; one item per SEM realization (itr)."""
+    """(SEM image, depth map) pairs.
+
+    input_mode="single": one item per SEM realization (itr) — the default.
+    input_mode="itr_mean": one item per pair; the input is the pixel mean of the
+    pair's realizations (mimics the frame-averaged look of real acquisitions
+    while preserving absolute brightness, the primary depth cue).
+    """
 
     def __init__(
         self,
         pairs: list[SimPair],
         augment: bool = False,
         appearance: dict | None = None,
+        input_mode: str = "single",
     ):
-        self.items = [(p.sem_paths[k], p.depth_path) for p in pairs for k in range(len(p.sem_paths))]
+        if input_mode not in ("single", "itr_mean"):
+            raise ValueError(f"unknown input_mode: {input_mode}")
+        if input_mode == "itr_mean":
+            self.items = [(p.sem_paths, p.depth_path) for p in pairs]
+        else:
+            self.items = [
+                ((p.sem_paths[k],), p.depth_path)
+                for p in pairs
+                for k in range(len(p.sem_paths))
+            ]
         self.augment = augment
         self.appearance = appearance
 
@@ -132,8 +148,10 @@ class SimDataset(Dataset):
         return len(self.items)
 
     def __getitem__(self, i: int) -> dict:
-        sem_path, depth_path = self.items[i]
-        image, target = load_image01(sem_path), load_image01(depth_path)
+        sem_paths, depth_path = self.items[i]
+        imgs = [load_image01(p) for p in sem_paths]
+        image = imgs[0] if len(imgs) == 1 else np.mean(imgs, axis=0, dtype=np.float32)
+        target = load_image01(depth_path)
         if self.augment:
             if random.random() < 0.5:
                 image, target = image[:, ::-1], target[:, ::-1]

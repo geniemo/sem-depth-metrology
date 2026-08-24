@@ -138,3 +138,20 @@ def test_list_pseudo_pairs_matches_tree(synth_root, tmp_path):
     (tmp_path / "pseudo" / rel).unlink()
     with pytest.raises(ValueError, match="pseudo depth missing"):
         list_pseudo_pairs(real_root, tmp_path / "pseudo")
+
+
+def test_sim_dataset_itr_mean_mode(synth_root):
+    pairs = _pairs(synth_root)
+    ds_mean = SimDataset(pairs, input_mode="itr_mean")
+    ds_single = SimDataset(pairs)
+    assert len(ds_mean) == 12 and len(ds_single) == 24
+    item = ds_mean[0]
+    itr0, itr1 = ds_single[0], ds_single[1]  # the two realizations of pairs[0]
+    assert torch.equal(itr0["target"], itr1["target"])
+    assert torch.allclose(item["image"], (itr0["image"] + itr1["image"]) / 2, atol=1e-6)
+    assert torch.equal(item["target"], itr0["target"])
+
+
+def test_sim_dataset_rejects_unknown_input_mode(synth_root):
+    with pytest.raises(ValueError, match="unknown input_mode"):
+        SimDataset(_pairs(synth_root), input_mode="bogus")

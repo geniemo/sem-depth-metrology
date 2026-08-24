@@ -60,7 +60,8 @@ def run_finetune(cfg: dict) -> dict:
         pseudo = list_pseudo_pairs(Path(d["pseudo_sem_root"]), Path(d["pseudo_depth_root"]))
         print(f"mixing {len(pseudo)} pseudo pairs into {len(train_pairs)} sim train pairs")
         train_pairs = train_pairs + pseudo  # sim hold-out stays pure sim
-    sim_ds = SimDataset(train_pairs, augment=tr["augment"], appearance=tr.get("appearance"))
+    sim_ds = SimDataset(train_pairs, augment=tr["augment"], appearance=tr.get("appearance"),
+                        input_mode=tr.get("input_mode", "single"))
     val_ds = SimDataset(val_pairs, augment=False)
     sim_dl = DataLoader(
         sim_ds, batch_size=tr["batch_size"], shuffle=True,
