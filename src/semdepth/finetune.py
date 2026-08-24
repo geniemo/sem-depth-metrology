@@ -27,7 +27,7 @@ from semdepth.data import (
 )
 from semdepth.model import UnetTimm
 from semdepth.results import append_result
-from semdepth.train import evaluate, seed_all
+from semdepth.train import evaluate, make_loss, seed_all
 
 
 def fit_affine(pred255: np.ndarray, avg: np.ndarray) -> tuple[float, float]:
@@ -87,6 +87,7 @@ def run_finetune(cfg: dict) -> dict:
     opt = torch.optim.AdamW(model.parameters(), lr=tr["lr"], weight_decay=tr["weight_decay"])
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=tr["epochs"] * len(sim_dl))
     lam = float(tr.get("lambda_real", 1.0))
+    pixel_loss = make_loss(tr.get("loss", "l1"))
 
     run_dir = Path(out["runs_dir"]) / out["run_name"]
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -121,7 +122,7 @@ def run_finetune(cfg: dict) -> dict:
             xr = rbatch["image"].to(device, non_blocking=True)
             ar = rbatch["avg_depth"].to(device, non_blocking=True).float()
             with torch.autocast(device, dtype=torch.bfloat16, enabled=tr["amp"]):
-                l1 = torch.nn.functional.l1_loss(model(xs), ts)
+                l1 = pixel_loss(model(xs), ts)
                 mean255 = model(xr).mean(dim=(1, 2, 3)) * 255.0
                 lreal = (a + b * mean255 - ar).abs().mean() / 255.0
                 loss = l1 + lam * lreal

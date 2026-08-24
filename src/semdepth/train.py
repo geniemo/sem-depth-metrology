@@ -20,6 +20,19 @@ def seed_all(seed: int) -> None:
     torch.cuda.manual_seed_all(seed)
 
 
+def make_loss(name: str):
+    """Pixel loss selector. The leaderboard metric is RMSE, so 'l2'/'l1l2'
+    align training with scoring; 'l1' is the robust default."""
+    f = torch.nn.functional
+    if name == "l1":
+        return f.l1_loss
+    if name == "l2":
+        return f.mse_loss
+    if name == "l1l2":
+        return lambda p, t: 0.5 * f.l1_loss(p, t) + 0.5 * f.mse_loss(p, t)
+    raise ValueError(f"unknown loss: {name}")
+
+
 @torch.no_grad()
 def evaluate(model: torch.nn.Module, loader: DataLoader, device: str) -> float:
     model.eval()
@@ -61,6 +74,7 @@ def run_training(cfg: dict) -> dict:
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(
         opt, T_max=tr["epochs"] * max(1, len(train_dl))
     )
+    pixel_loss = make_loss(tr.get("loss", "l1"))
 
     run_dir = Path(out["runs_dir"]) / out["run_name"]
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -73,7 +87,7 @@ def run_training(cfg: dict) -> dict:
             x = batch["image"].to(device, non_blocking=True)
             t = batch["target"].to(device, non_blocking=True)
             with torch.autocast(device, dtype=torch.bfloat16, enabled=tr["amp"]):
-                loss = torch.nn.functional.l1_loss(model(x), t)
+                loss = pixel_loss(model(x), t)
             opt.zero_grad(set_to_none=True)
             loss.backward()
             opt.step()
@@ -92,6 +106,7 @@ def run_training(cfg: dict) -> dict:
         "encoder": m["encoder"],
         "epochs": tr["epochs"],
         "batch_size": tr["batch_size"],
+        "loss": tr.get("loss", "l1"),
         "lr": tr["lr"],
         "augment": tr["augment"],
         "seed": cfg["seed"],

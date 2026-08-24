@@ -40,3 +40,17 @@ def test_run_training_rejects_empty_train_loader(synth_root, tmp_path):
     cfg["train"]["batch_size"] = 999  # larger than the whole synthetic train set
     with pytest.raises(ValueError, match="no training batches"):
         run_training(cfg)
+
+
+def test_make_loss_variants():
+    import torch
+    from semdepth.train import make_loss
+    p, t = torch.tensor([0.0, 1.0]), torch.tensor([1.0, 1.0])
+    assert abs(make_loss("l1")(p, t).item() - 0.5) < 1e-6
+    assert abs(make_loss("l2")(p, t).item() - 0.5) < 1e-6
+    assert abs(make_loss("l1l2")(p, t).item() - 0.5) < 1e-6
+    p2 = torch.tensor([0.5, 1.0])
+    assert abs(make_loss("l1l2")(p2, t).item() - (0.5 * 0.25 + 0.5 * 0.125)) < 1e-6
+    import pytest
+    with pytest.raises(ValueError, match="unknown loss"):
+        make_loss("huber")
