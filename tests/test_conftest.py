@@ -13,7 +13,10 @@ def test_synth_layout(synth_root):
     names = {p.name for p in depths}
     assert len(names) == 6
     for n in names:
-        assert len([p for p in depths if p.name == n]) == 2
+        same = [p for p in depths if p.name == n]
+        assert len(same) == 2
+        a, b = (np.array(Image.open(p)) for p in same)
+        assert np.array_equal(a, b)  # identical depth map regardless of case
     df = pd.read_csv(synth_root / "train" / "average_depth.csv")
     assert list(df.columns) == ["0", "1"]
     assert len(df) == 3  # one label row per site, not per image
