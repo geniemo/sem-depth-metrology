@@ -1,0 +1,19 @@
+seed: 42
+data:
+  root: data/raw
+train:
+  dim: 64
+  n_res: 2
+  dropout: 0.3
+  lr: 2.0e-4
+  lambda_cycle: 10.0
+  lambda_idt: 0.5
+  lambda_gp: 10.0
+  critic_iters: 5
+  batch_size: 128
+  num_workers: 8
+  epochs_first: 120   # published: 300; start shorter, gate decides if more needed
+  epochs_warm: 60     # published: 100
+  save_every: 20
+out:
+  dir: experiments/runs/cyclegan
