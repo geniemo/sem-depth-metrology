@@ -3,3 +3,4 @@ date,run_name,zip,sim_val_rmse255,raw_proxy_rmse,cal_proxy_rmse,proxy_corr,lb_pu
 2026-08-24,e2_weak_r34,submission_e2_weak.zip,2.6360,12.5299,1.8353,0.9862,5.32517,rank 39 of 172; local gate <-> LB correlation confirmed
 2026-08-24,e3_selftrain_r34,submission_e3_selftrain.zip,2.3437,12.7474,1.6092,0.9894,5.62787,private 5.60876; WORSE than E2 despite all local gains — pseudo-label confirmation bias on real pixel shapes; cal-proxy blind to pixel level
 2026-08-24,e6b_itrmean_weak,submission_e6_itrmean.zip,3.0948,12.5042,1.9336,0.9847,5.11307,private 5.10971 rank 35 — NEW BEST; pixel-level gain from frame-averaging hypothesis
+2026-08-24,e8_ensemble_tta,submission_e8_ensemble.zip,,,1.9614,0.9842,,pending upload — 3-member ensemble (e6b r34 + e7b r34-blur + e4c convnext) with flip TTA
