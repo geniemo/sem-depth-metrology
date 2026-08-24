@@ -31,3 +31,14 @@ def test_overfits_one_batch():
         opt.step()
         losses.append(loss.item())
     assert losses[-1] < 0.5 * losses[0], f"no learning: {losses[0]:.4f} -> {losses[-1]:.4f}"
+
+
+def test_output_shape_stride4_encoder():
+    # convnext's shallowest feature is stride 4 -> exercises the fallback
+    # bilinear-resize branch that resnet never hits
+    m = UnetTimm(encoder_name="convnext_tiny", pretrained=False).eval()
+    x = torch.rand(1, 1, 72, 48)
+    with torch.no_grad():
+        y = m(x)
+    assert y.shape == (1, 1, 72, 48)
+    assert 0.0 <= y.min() and y.max() <= 1.0
