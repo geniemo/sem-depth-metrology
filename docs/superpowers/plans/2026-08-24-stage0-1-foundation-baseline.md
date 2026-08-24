@@ -881,6 +881,7 @@ git commit -m "feat: add size-agnostic UnetTimm depth regression model"
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from semdepth.train import run_training
 
@@ -912,6 +913,13 @@ def test_run_training_end_to_end(synth_root, tmp_path):
     df = pd.read_csv(tmp_path / "results.csv")
     assert df.loc[0, "run_name"] == "smoke"
     assert 0.0 < row["best_val_rmse255"] < 255.0
+
+
+def test_run_training_rejects_empty_train_loader(synth_root, tmp_path):
+    cfg = _tiny_cfg(synth_root, tmp_path)
+    cfg["train"]["batch_size"] = 999  # larger than the whole synthetic train set
+    with pytest.raises(ValueError, match="no training batches"):
+        run_training(cfg)
 ```
 
 - [ ] **Step 2: 테스트 실행 (실패 확인)**
@@ -975,6 +983,10 @@ def run_training(cfg: dict) -> dict:
         val_ds, batch_size=tr["batch_size"], shuffle=False,
         num_workers=tr["num_workers"], pin_memory=(device == "cuda"),
     )
+    if len(train_dl) == 0:
+        raise ValueError(
+            f"no training batches: {len(train_ds)} images < batch_size {tr['batch_size']}"
+        )
 
     model = UnetTimm(m["encoder"], pretrained=m["pretrained"]).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=tr["lr"], weight_decay=tr["weight_decay"])
