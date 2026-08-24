@@ -35,6 +35,30 @@ def test_pairing_rejects_orphan_sem(synth_root):
         _pairs(synth_root)
 
 
+def test_pairing_rejects_bad_sem_name(synth_root):
+    bad = synth_root / "simulation_data" / "SEM" / "Case_1" / "80" / "noitr.png"
+    bad.write_bytes((synth_root / "test" / "SEM" / "000000.png").read_bytes())
+    with pytest.raises(ValueError, match="no _itr suffix"):
+        _pairs(synth_root)
+
+
+def test_pairing_rejects_misplaced_depth(synth_root):
+    depth_dir = synth_root / "simulation_data" / "Depth" / "Case_1" / "80"
+    victim = sorted(depth_dir.glob("*.png"))[0]
+    victim.rename(depth_dir / "renamed.png")  # count unchanged, per-item lookup fails
+    with pytest.raises(ValueError, match="depth map missing"):
+        _pairs(synth_root)
+
+
+def test_augment_flips_image_and_target_together(synth_root, monkeypatch):
+    aug_ds = SimDataset(_pairs(synth_root), augment=True)
+    base_ds = SimDataset(_pairs(synth_root), augment=False)
+    monkeypatch.setattr("semdepth.data.random.random", lambda: 0.0)  # force both flips
+    aug, orig = aug_ds[0], base_ds[0]
+    assert torch.equal(aug["image"], torch.flip(orig["image"], [1, 2]))
+    assert torch.equal(aug["target"], torch.flip(orig["target"], [1, 2]))
+
+
 def test_group_split_no_leak(synth_root):
     pairs = _pairs(synth_root)
     tr, va = split_pairs(pairs, val_fraction=0.34, seed=7)
