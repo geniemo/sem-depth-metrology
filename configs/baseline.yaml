@@ -1,0 +1,20 @@
+seed: 42
+data:
+  sim_sem_dir: data/raw/simulation_data/SEM
+  sim_depth_dir: data/raw/simulation_data/Depth
+  val_fraction: 0.1
+model:
+  encoder: resnet34
+  pretrained: true
+train:
+  epochs: 8
+  batch_size: 256
+  lr: 3.0e-4
+  weight_decay: 1.0e-4
+  num_workers: 8
+  amp: true
+  augment: true
+out:
+  run_name: s1_baseline_r34
+  runs_dir: experiments/runs
+  results_csv: experiments/results.csv
