@@ -1,0 +1,2 @@
+run_name,encoder,epochs,batch_size,lr,augment,seed,n_train_imgs,n_val_imgs,best_val_rmse255,wall_min
+s1_pilot,resnet34,1,256,0.0003,True,42,155976,17328,3.3877,0.8
