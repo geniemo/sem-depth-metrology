@@ -1,6 +1,6 @@
 # SEM Top-down 영상 기반 깊이 계측: sim-to-real 도메인 갭의 진단과 공략
 
-> 2022 Samsung AI Challenge (3D Metrology, Dacon 235954) 사후 참가 기록.
+> 2022 Samsung AI Challenge (3D Metrology, Dacon 235954) 참가 기록.
 > 최종 성적 **Public RMSE 4.597 / Private 4.618, 제출 172팀 중 26위** (등록 790명).
 > 순수 시뮬레이션 베이스라인(8.000, 118위)에서 가설-검증 사이클 8회로 도달했다.
 
