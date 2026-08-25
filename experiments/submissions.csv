@@ -7,3 +7,5 @@ date,run_name,zip,sim_val_rmse255,raw_proxy_rmse,cal_proxy_rmse,proxy_corr,lb_pu
 2026-08-24,e10_grand_ensemble,submission_e10_grand.zip,,,,,4.65673,private 4.67668 — WORSE than E8: weak members dilute equal-weight ensemble (quality > quantity)
 2026-08-24,e11_best3,submission_e11_best3.zip,,,,,,optional upload — strongest-3 only (2x convnext + e6b), dilution hypothesis test
 2026-08-25,r1_retrieval,submission_r1_retrieval.zip,,,,,6.29354,private 6.35503 — FAILED vs LOO 2.0-2.3: cross-domain ranking near-random (6.29 ~ random-exemplar 7.8); geometric proxy was misleading, site-consistency is the true ranking oracle
+2026-08-25,r2a_snap,submission_r2a_snap.zip,,,,,,pending — regression-guided exemplar snap (e12d query, L2+shift, in-harness 2.31 / oracle 2.03)
+2026-08-25,r2b_mix,submission_r2b_mix.zip,,,,,,pending — 0.5*exemplar + 0.5*E8 ensemble (in-harness 1.90; complementary errors)
