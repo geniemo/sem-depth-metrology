@@ -1,4 +1,4 @@
-"""Extend Case_1 WGAN-GP training from a checkpoint (published run used 300 epochs)."""
+"""Extend one case's WGAN-GP training from a checkpoint (published: 300/100 epochs)."""
 import argparse
 import time
 from collections import defaultdict
@@ -17,6 +17,7 @@ from semdepth.train import seed_all
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("-c", "--config", default="configs/cyclegan.yaml")
+    ap.add_argument("--case", default="Case_1")
     ap.add_argument("--resume", required=True)
     ap.add_argument("--start-epoch", type=int, required=True)
     ap.add_argument("--until", type=int, default=300)
@@ -28,10 +29,11 @@ def main() -> None:
     tr, root = cfg["train"], Path(cfg["data"]["root"])
     out_dir = Path(cfg["out"]["dir"])
 
+    case_idx = int(args.case.split("_")[1]) - 1
     pairs = [p for p in list_sim_pairs(root / "simulation_data" / "SEM",
                                        root / "simulation_data" / "Depth")
-             if p.case == "Case_1"]
-    real = [p for p, bi, _ in list_real_labeled(root / "train" / "SEM") if bi == 0]
+             if p.case == args.case]
+    real = [p for p, bi, _ in list_real_labeled(root / "train" / "SEM") if bi == case_idx]
 
     trainer = CycleWGanGP(device, dim=tr["dim"], n_res=tr["n_res"], dropout=tr["dropout"],
                           lr=tr["lr"], lambda_cycle=tr["lambda_cycle"],
@@ -47,12 +49,12 @@ def main() -> None:
     for epoch in range(args.start_epoch, args.until):
         log = trainer.train_epoch(sim_dl, real_dl)
         if epoch % 5 == 0 or epoch == args.until - 1:
-            print(f"Case_1 epoch {epoch}: g={log.get('g', float('nan')):.3f} "
+            print(f"{args.case} epoch {epoch}: g={log.get('g', float('nan')):.3f} "
                   f"cyc={log.get('cyc', float('nan')):.3f} ({(time.time()-t0)/60:.1f} min)",
                   flush=True)
         if (epoch + 1) % tr["save_every"] == 0 or epoch == args.until - 1:
-            torch.save(trainer.state(), out_dir / f"Case_1_ep{epoch + 1:03d}.pt")
-    print("Case_1 extension done", flush=True)
+            torch.save(trainer.state(), out_dir / f"{args.case}_ep{epoch + 1:03d}.pt")
+    print(f"{args.case} extension done", flush=True)
 
 
 if __name__ == "__main__":
