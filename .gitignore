@@ -9,4 +9,3 @@ nohup.out
 .pytest_cache/
 *.egg-info/
 docs/application-notes.md
-docs/project-summary-26th.md
