@@ -19,6 +19,8 @@ def test_identity_grouping(synth_root):
     )
     sims = sim_identities(pairs)
     assert len(sims) == 6 and all(len(v) == 4 for v in sims)  # 2 cases x 2 itr views
+    sims_t = sim_identities(pairs, translated_root=synth_root / "simulation_data" / "Depth")
+    assert all(len(v) == 6 for v in sims_t)  # + one 'translated' path per case
     reals = real_site_identities(list_real_labeled(synth_root / "train" / "SEM"))
     assert len(reals) == 3 and all(len(v) == 3 for v in reals)
 
@@ -48,5 +50,7 @@ def test_embednet_and_oracle_run(synth_root):
     )
     keys = [p.sem_paths[0] for p in pairs]
     sites = real_site_identities(list_real_labeled(synth_root / "train" / "SEM"))
-    score = site_consistency_oracle(model, keys, sites, device="cpu")
-    assert 0.0 <= score <= 1.0
+    o = site_consistency_oracle(model, keys, sites, device="cpu")
+    assert 0.0 <= o["consistency"] <= 1.0
+    assert 0.0 < o["diversity"] <= 1.0
+    assert 0.0 <= o["score"] <= 1.0

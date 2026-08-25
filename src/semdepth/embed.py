@@ -59,11 +59,21 @@ class PairViewDataset(Dataset):
                 "b": torch.from_numpy(vb.copy()).unsqueeze(0)}
 
 
-def sim_identities(pairs: list[SimPair]) -> list[list[Path]]:
-    """Group ALL sem views (every case, every itr) of one structure."""
+def sim_identities(
+    pairs: list[SimPair], translated_root: Path | None = None
+) -> list[list[Path]]:
+    """Group ALL sem views (every case, every itr) of one structure.
+
+    With translated_root, each pair's GAN-translated image (stored under the
+    depth-map relative path) joins the view set — manufacturing cross-appearance
+    positives that force domain-invariant identity features.
+    """
     by_group: dict[str, list[Path]] = {}
     for p in pairs:
         by_group.setdefault(p.group_id, []).extend(p.sem_paths)
+        if translated_root is not None:
+            rel = p.depth_path.relative_to(p.depth_path.parents[2])
+            by_group[p.group_id].append(Path(translated_root) / rel)
     return [sorted(v) for _, v in sorted(by_group.items())]
 
 
@@ -115,14 +125,25 @@ def site_consistency_oracle(
     key_paths: list[Path],
     holdout_sites: list[list[Path]],
     device: str,
-) -> float:
-    """Mean fraction of a hold-out site's images agreeing on the top-1 key."""
+) -> dict:
+    """Hold-out ranking oracle, collapse-aware.
+
+    consistency: mean fraction of a site's images agreeing on the top-1 key.
+    diversity:   distinct modal keys across sites / number of sites (a collapsed
+                 embedding maps every site to one key -> diversity ~ 1/n_sites).
+    score:       consistency * diversity — the number to select checkpoints by.
+    """
     from collections import Counter
 
     keys = torch.from_numpy(embed_paths(model, key_paths, device)).to(device)
-    hits = []
+    hits, modal = [], []
     for site in holdout_sites:
         q = torch.from_numpy(embed_paths(model, site, device)).to(device)
         top1 = (q @ keys.T).argmax(dim=1).cpu().tolist()
-        hits.append(Counter(top1).most_common(1)[0][1] / len(top1))
-    return float(np.mean(hits))
+        c = Counter(top1).most_common(1)[0]
+        hits.append(c[1] / len(top1))
+        modal.append(int(c[0]))
+    consistency = float(np.mean(hits))
+    diversity = len(set(modal)) / len(modal)
+    return {"consistency": consistency, "diversity": diversity,
+            "score": consistency * diversity}

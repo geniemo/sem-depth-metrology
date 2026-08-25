@@ -34,7 +34,8 @@ def main() -> None:
     root = Path(cfg["data"]["root"])
 
     pairs = list_sim_pairs(root / "simulation_data" / "SEM", root / "simulation_data" / "Depth")
-    sims = sim_identities(pairs)
+    translated = cfg["data"].get("translated_root")
+    sims = sim_identities(pairs, translated_root=Path(translated) if translated else None)
     records = list_real_labeled(root / "train" / "SEM")
     # oracle uses bucket-110 hold-out sites vs Case_1 keys
     site_ids = sorted({site for _, bi, site in records if bi == 0})
@@ -65,20 +66,20 @@ def main() -> None:
             loss.backward()
             opt.step()
             sched.step()
-        oracle = site_consistency_oracle(model, key_paths, holdout_sites, device)
+        o = site_consistency_oracle(model, key_paths, holdout_sites, device)
         print(f"epoch {epoch}: loss={loss.item():.4f} "
-              f"holdout site-consistency={oracle:.4f} ({(time.time()-t0)/60:.1f} min)",
-              flush=True)
-        if oracle > best:
-            best = oracle
+              f"consistency={o['consistency']:.4f} diversity={o['diversity']:.3f} "
+              f"score={o['score']:.4f} ({(time.time()-t0)/60:.1f} min)", flush=True)
+        if o["score"] > best:
+            best = o["score"]
             torch.save(model.state_dict(), out_dir / "best.pt")
     append_result(Path(cfg["out"]["results_csv"]), {
         "run_name": cfg["out"]["run_name"], "encoder": tr["encoder"],
         "epochs": tr["epochs"], "lr": tr["lr"],
-        "best_site_consistency": round(best, 4),
+        "best_oracle_score": round(best, 4),
         "wall_min": round((time.time() - t0) / 60, 1),
     })
-    print({"best_site_consistency": best})
+    print({"best_oracle_score": best})
 
 
 if __name__ == "__main__":
