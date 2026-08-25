@@ -134,3 +134,24 @@ def test_refine_shortlist_finds_planted_target():
     assert idx[0] == target and sims[0] > 0.999
     spec = variant_specs(2, False)[int(var[0])]
     assert np.allclose(align_key_to_query(keys_raw[target], spec), q, atol=1e-6)
+
+
+def test_snap_batch_finds_nearest_gt_under_shift(synth_root):
+    from semdepth.data import list_sim_pairs
+    from semdepth.retrieval import build_gt_keys, snap_batch, variant_specs, align_key_to_query
+    from semdepth.data import load_image01
+
+    pairs = list_sim_pairs(
+        synth_root / "simulation_data" / "SEM", synth_root / "simulation_data" / "Depth"
+    )
+    depths = [p.depth_path for p in pairs]
+    keys, sq = build_gt_keys(depths, device="cpu")
+    target = 5
+    q = np.roll(load_image01(depths[target]), shift=(2, -1), axis=(0, 1))
+    idx, vals, var = snap_batch(q[None], keys, sq, device="cpu", shift=2, topk=2)
+    # the fixture duplicates each depth map across cases, so the winner may be
+    # either exact-tie copy — assert on CONTENT after realignment, not on index
+    chosen = load_image01(depths[int(idx[0, 0])])
+    spec = variant_specs(2, False)[int(var[0, 0])]
+    realigned = align_key_to_query(chosen, spec)
+    assert np.allclose(realigned, q, atol=1e-3)

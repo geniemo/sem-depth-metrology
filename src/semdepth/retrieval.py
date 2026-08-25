@@ -182,6 +182,50 @@ def refine_shortlist(
             best_var[rows, j].cpu().numpy())
 
 
+@torch.no_grad()
+def snap_batch(
+    query_maps01: np.ndarray,  # (B, H, W) predicted depth maps in [0,1]
+    gt_keys01: torch.Tensor,  # (N, D) library GT maps in [0,1], float32, NOT normalized
+    gt_sqnorm: torch.Tensor,  # (N,) float32 squared norms of gt_keys01
+    device: str,
+    shift: int = 2,
+    topk: int = 1,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Nearest library GT (L2, min over cyclic shifts of the query).
+
+    argmin_k ||shift(q) - k||^2 == argmax_k (shift(q)@k - 0.5||k||^2); ||q|| is
+    constant per variant so it cancels. Kept in float32: fp16 dot noise (~0.05%)
+    can flip near-tie exemplar margins.
+    Returns (indices, scores, variant ids) with variants from
+    variant_specs(shift, False).
+    """
+    q = torch.from_numpy(query_maps01.astype(np.float32)).to(device)
+    specs = variant_specs(shift, False)
+    best = None
+    best_var = None
+    for vi, (_f, dh, dw) in enumerate(specs):
+        v = torch.roll(q, shifts=(dh, dw), dims=(1, 2)).reshape(q.shape[0], -1)
+        score = v @ gt_keys01.T - 0.5 * gt_sqnorm[None, :]
+        if best is None:
+            best = score
+            best_var = torch.zeros_like(score, dtype=torch.int16)
+        else:
+            better = score > best
+            best = torch.where(better, score, best)
+            best_var = torch.where(
+                better, torch.tensor(vi, dtype=torch.int16, device=score.device), best_var)
+    vals, idx = torch.topk(best, k=topk, dim=1)
+    var = torch.gather(best_var, 1, idx).cpu().numpy()
+    return idx.cpu().numpy(), vals.cpu().numpy(), var
+
+
+def build_gt_keys(depth_paths: list[Path], device: str) -> tuple[torch.Tensor, torch.Tensor]:
+    """GT library in [0,1] (N, D) fp16 + squared norms for snap_batch."""
+    mats = np.stack([load_image01(p).ravel() for p in depth_paths])
+    k = torch.from_numpy(mats).to(device)  # float32: snap margins are fp16-fragile
+    return k, (k ** 2).sum(dim=1)
+
+
 def blend_depths_aligned(
     depth_paths: list[Path],
     idx: np.ndarray,
