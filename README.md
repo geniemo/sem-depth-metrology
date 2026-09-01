@@ -192,7 +192,7 @@ scripts/          train / finetune / predict(+ensemble) / eval_real_proxy / insp
 configs/          실험 1개 = YAML 1개
 experiments/      results.csv · submissions.csv — 모든 런과 제출의 원장
 report/           기술 리포트(부록 포함) · EDA · 그림
-docs/             데이터 실측 노트 · 프로젝트 요약
+docs/             데이터 실측 노트 · 프로젝트 요약 · [학습 가이드](docs/study-guide.md)(도메인 배경부터 실험 서사까지 자습용)
 tests/            56개 — 스플릿 누수 가드, TTA 라운드트립, EM 재적합 폐형해 등 규약 고정
 ```
 
